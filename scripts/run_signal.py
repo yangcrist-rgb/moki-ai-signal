@@ -16,8 +16,9 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path.cwd() / "outputs")
     parser.add_argument("--cache-dir", type=Path, default=Path.cwd() / ".moki-cache")
     parser.add_argument("--refresh", action="store_true", help="Fail rather than fall back to cache if the download fails")
+    parser.add_argument("--skip-data-validation", action="store_true", help="Skip the independent Sina daily OHLC cross-check")
     args = parser.parse_args()
-    result = run_pipeline(args.ticker, output_dir=args.output_dir, cache_dir=args.cache_dir, days=args.days, as_of=args.as_of, strategy_id=args.strategy, refresh=args.refresh)
+    result = run_pipeline(args.ticker, output_dir=args.output_dir, cache_dir=args.cache_dir, days=args.days, as_of=args.as_of, strategy_id=args.strategy, refresh=args.refresh, validate_data=not args.skip_data_validation)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

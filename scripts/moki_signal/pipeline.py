@@ -8,7 +8,7 @@ import pandas as pd
 
 from .chart import render_chart
 from .contracts import to_jsonable
-from .data import default_as_of, load_yahoo_daily
+from .data import default_as_of, load_yahoo_daily, validate_yahoo_daily
 from .render import TEMPLATE_ID, write_signals
 from .strategy import STRATEGY_ID, run_strategy
 
@@ -24,11 +24,17 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def run_pipeline(ticker: str, *, output_dir: Path, cache_dir: Path, days: int = 93, as_of: str | None = None, strategy_id: str = STRATEGY_ID, refresh: bool = False) -> dict[str, object]:
+def run_pipeline(ticker: str, *, output_dir: Path, cache_dir: Path, days: int = 93, as_of: str | None = None, strategy_id: str = STRATEGY_ID, refresh: bool = False, validate_data: bool = True) -> dict[str, object]:
     if days < 15:
         raise ValueError("days must be at least 15")
     target_as_of = pd.Timestamp(as_of) if as_of else default_as_of()
     frame, instrument, stale_cache = load_yahoo_daily(ticker, as_of=target_as_of, cache_dir=cache_dir, refresh=refresh)
+    data_validation = validate_yahoo_daily(frame, instrument.ticker) if validate_data else {
+        "status": "skipped",
+        "provider": "sina-finance-us-daily",
+        "role": "validation-only",
+        "affects_strategy_input": False,
+    }
     result = run_strategy(strategy_id, frame, DEFAULT_PARAMETERS.copy())
     final_as_of = frame["Date"].iloc[-1].strftime("%Y-%m-%d")
     target = output_dir / instrument.ticker / final_as_of
@@ -47,6 +53,10 @@ def run_pipeline(ticker: str, *, output_dir: Path, cache_dir: Path, days: int = 
         "first_date": frame["Date"].iloc[0].strftime("%Y-%m-%d"),
         "last_date": final_as_of,
         "stale_cache": stale_cache,
+        "data": {
+            "primary_provider": "yahoo-finance-chart",
+            "validation": data_validation,
+        },
         "template": {"id": TEMPLATE_ID},
         "strategy": to_jsonable(result),
         "render": render_summary,
