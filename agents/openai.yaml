@@ -1,0 +1,7 @@
+interface:
+  display_name: "MOKI AI"
+  short_description: "Generate fixed-template US stock signal charts."
+  default_prompt: "Use $moki-ai to generate a MOKI AI Signal chart for AEHR."
+  brand_color: "#35D6A6"
+policy:
+  allow_implicit_invocation: true

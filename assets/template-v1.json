@@ -1,0 +1,8 @@
+{
+  "id": "moki-ai-signal-v1",
+  "canvas": {"width": 1920, "height": 1128, "background": "#FFFFFF"},
+  "chart": {"left": 85, "top": 160, "right": 1825, "bottom": 1010},
+  "brand": {"ink": "#0B0F0E", "node": "#35D6A6", "paper": "#FFFFFF"},
+  "display_days": 93,
+  "strategy": {"id": "s1-reconstruction", "version": "1.0.0", "rsi_period": 14, "threshold": 0.08, "pivot_window": 2}
+}

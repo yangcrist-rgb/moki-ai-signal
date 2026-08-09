@@ -1,0 +1,5 @@
+.moki-cache/
+outputs/
+outputs-repeat/
+__pycache__/
+*.pyc
