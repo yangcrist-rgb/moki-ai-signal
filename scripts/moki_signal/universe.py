@@ -21,6 +21,7 @@ def normalize_universe(raw: dict[str, Any], holdings: list[dict[str, Any]] | Non
     monitor = raw.get("options_monitor", {})
     earnings = raw.get("large_cap_earnings", {})
     events = raw.get("events", {})
+    strength = raw.get("strength", {})
     playbook = {**DEFAULT_PLAYBOOK, **raw.get("playbooks", {})}
     macro = {}
     for item in raw.get("macro", []):
@@ -77,9 +78,14 @@ def normalize_universe(raw: dict[str, Any], holdings: list[dict[str, Any]] | Non
             "macro_lookback_days": int(events.get("macro_lookback_days", 3)),
         },
         "strength": {
-            "min_days_above_sma5": int(raw.get("strength", {}).get("min_days_above_sma5", 2)),
-            "require_sma20_above_sma50": bool(raw.get("strength", {}).get("require_sma20_above_sma50", True)),
-            "require_close_above_sma20": bool(raw.get("strength", {}).get("require_close_above_sma20", True)),
+            "min_days_above_sma5": int(strength.get("min_days_above_sma5", 2)),
+            "require_close_above_sma20": bool(strength.get("require_close_above_sma20", True)),
+            "min_score": int(strength.get("min_score", 2)),
+            "require_structure": bool(strength.get("require_structure", True)),
+            "surge_lookback_days": int(strength.get("surge_lookback_days", 10)),
+            "surge_min_return_pct": float(strength.get("surge_min_return_pct", 3.0)),
+            "surge_volume_multiple": float(strength.get("surge_volume_multiple", 1.5)),
+            "news_lookback_days": int(strength.get("news_lookback_days", 7)),
         },
     }
 

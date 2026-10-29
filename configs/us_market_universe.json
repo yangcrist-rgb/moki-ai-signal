@@ -770,7 +770,12 @@
   ],
   "strength": {
     "min_days_above_sma5": 2,
-    "require_sma20_above_sma50": true,
-    "require_close_above_sma20": true
+    "require_close_above_sma20": true,
+    "min_score": 2,
+    "require_structure": true,
+    "surge_lookback_days": 10,
+    "surge_min_return_pct": 3.0,
+    "surge_volume_multiple": 1.5,
+    "news_lookback_days": 7
   }
 }

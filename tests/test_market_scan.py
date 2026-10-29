@@ -17,6 +17,12 @@ from moki_signal.market_scan import (  # noqa: E402
     earnings_session,
     filter_sectors_by_cap,
     gex_change,
+    headline_tone,
+    mentions,
+    name_keys,
+    news_signal,
+    strength_checks,
+    volume_surges,
     is_strong,
     macro_snapshot,
     rank_sectors,
@@ -71,9 +77,9 @@ class SectorTests(unittest.TestCase):
     def test_etf_score_preferred_and_leaders_by_5d(self) -> None:
         snaps = {
             "ETF": {"ret_20d": 3.0, "ret_5d": 1.0, "above_sma": {"20": True, "50": True}, "trend": "bullish"},
-            "A": {"ret_20d": 10.0, "ret_5d": 1.0, "close": 110, "sma": {"20": 100, "50": 95}, "days_above_sma5": 3, "above_sma": {"20": True, "50": False}, "trend": "range"},
+            "A": {"ret_20d": 10.0, "ret_5d": 1.0, "close": 110, "sma": {"20": 100, "50": 95}, "days_above_sma5": 3, "ema_aligned": True, "above_sma": {"20": True, "50": False}, "trend": "range"},
             "B": {"ret_20d": -2.0, "ret_5d": 6.0, "close": 90, "sma": {"20": 100, "50": 105}, "days_above_sma5": 0, "above_sma": {"20": False, "50": False}, "trend": "range"},
-            "C": {"ret_20d": 1.0, "ret_5d": 2.0, "close": 50, "sma": {"20": 48, "50": 45}, "days_above_sma5": 2, "above_sma": {"20": True, "50": True}, "trend": "bullish"},
+            "C": {"ret_20d": 1.0, "ret_5d": 2.0, "close": 50, "sma": {"20": 48, "50": 45}, "days_above_sma5": 2, "ema_aligned": True, "above_sma": {"20": True, "50": True}, "trend": "bullish"},
         }
         sectors = {"with_etf": {"etf": "ETF", "members": ["A", "B"]}, "no_etf": {"etf": None, "members": ["A", "C"]}}
         ranked = rank_sectors(sectors, snaps, 1)
@@ -189,3 +195,58 @@ class StrengthAndEventTests(unittest.TestCase):
         self.assertEqual(chain_session(epoch("2026-10-29 09:45")), ("2026-10-29", True))
         self.assertEqual(chain_session(epoch("2026-10-29 17:00")), ("2026-10-29", False))
         self.assertEqual(chain_session(epoch("2026-11-02 08:00")), ("2026-10-30", False))
+
+
+class StrengthScoreTests(unittest.TestCase):
+    def test_ema_alignment_on_rising_series(self) -> None:
+        snapshot = trend_snapshot(price_frame([100 + i for i in range(120)]), [5, 20, 50], (5, 20))
+        self.assertTrue(snapshot["ema_aligned"])
+        self.assertLess(snapshot["ema"]["20"], snapshot["ema"]["5"])
+
+    def test_volume_surge_detection(self) -> None:
+        frame = price_frame([100.0] * 40 + [105.0])
+        frame.loc[len(frame) - 1, "Volume"] = 2500
+        surges = volume_surges(frame)
+        self.assertEqual(len(surges), 1)
+        self.assertEqual(surges[0]["volume_ratio"], 2.5)
+        frame.loc[len(frame) - 1, "Volume"] = 1200
+        self.assertEqual(volume_surges(frame), [])
+
+    def test_headline_tone(self) -> None:
+        self.assertEqual(headline_tone("Citigroup Adjusts Price Target on Bloom Energy to $284 From $281"), 1)
+        self.assertEqual(headline_tone("Analyst cuts price target to $200 from $250"), -1)
+        self.assertEqual(headline_tone("Bloom Energy beats estimates and raises guidance"), 1)
+        self.assertEqual(headline_tone("Shares tumble after earnings miss"), -1)
+        self.assertEqual(headline_tone("3 Growth Stocks To Watch"), 0)
+
+    def test_news_signal_window(self) -> None:
+        now = 1_800_000_000
+        items = [{"title": "Company wins major contract", "providerPublishTime": now - 3600},
+                 {"title": "Company misses estimates", "providerPublishTime": now - 30 * 86400}]
+        signal = news_signal(items, now)
+        self.assertEqual(signal["status"], "positive")
+        self.assertEqual(signal["headlines"], 1)
+
+    def test_score_needs_extra_confirmation(self) -> None:
+        snapshot = trend_snapshot(price_frame([100 + i for i in range(120)]), [5, 20, 50], (5, 20))
+        checks = strength_checks(snapshot)
+        self.assertTrue(checks["core"] and checks["ema_aligned"] and checks["sma20_above_sma50"])
+        self.assertTrue(checks["strong"])
+        snapshot["news"] = {"status": "negative"}
+        self.assertFalse(strength_checks(snapshot, {"min_score": 2})["strong"])
+
+    def test_news_relevance_keys(self) -> None:
+        keys = name_keys("PANW", "Palo Alto Networks, Inc.")
+        self.assertIn("Palo Alto Networks", keys)
+        self.assertFalse(mentions("Why Did Cloudflare Stock Jump?", keys))
+        self.assertTrue(mentions("Palo Alto shares rally on guidance", keys))
+        self.assertEqual(name_keys("AMD", "Advanced Micro Devices, Inc."), ["AMD", "Advanced Micro Devices"])
+        self.assertTrue(mentions("AMD wins new OpenAI deal", ["AMD"]))
+        self.assertFalse(mentions("Lamda labs raises", ["AMD"]))
+
+    def test_surge_without_structure_is_emerging(self) -> None:
+        snapshot = {"close": 110, "sma": {"20": 100, "50": 120}, "days_above_sma5": 2, "ret_5d": 8.0, "ema_aligned": False,
+                    "volume_surges": [{"date": "2026-10-28"}], "news": {"status": "positive"}}
+        checks = strength_checks(snapshot)
+        self.assertFalse(checks["strong"])
+        self.assertTrue(checks["emerging"])

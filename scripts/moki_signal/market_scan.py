@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -47,6 +48,28 @@ def classify_trend(close: float, sma: dict[int, float | None], sma20_slope: floa
     return "range"
 
 
+def volume_surges(frame: pd.DataFrame, *, lookback: int = 10, min_return_pct: float = 3.0, volume_multiple: float = 1.5) -> list[dict[str, Any]]:
+    """Up days in the last ``lookback`` sessions with a large gain on volume well above the prior 20-day average."""
+    if "Volume" not in frame or len(frame) < 22:
+        return []
+    close = frame["Close"].astype(float).reset_index(drop=True)
+    volume = frame["Volume"].astype(float).reset_index(drop=True)
+    average = volume.shift(1).rolling(20).mean()
+    surges = []
+    for index in range(max(1, len(frame) - lookback), len(frame)):
+        change = (close.iloc[index] / close.iloc[index - 1] - 1) * 100
+        base = average.iloc[index]
+        if base and not math.isnan(base) and change >= min_return_pct and volume.iloc[index] >= volume_multiple * base:
+            surges.append(
+                {
+                    "date": pd.Timestamp(frame["Date"].iloc[index]).strftime("%Y-%m-%d"),
+                    "ret_pct": round(change, 2),
+                    "volume_ratio": round(volume.iloc[index] / base, 2),
+                }
+            )
+    return surges
+
+
 def trend_snapshot(frame: pd.DataFrame, windows: list[int], return_days: tuple[int, ...] = ()) -> dict[str, Any]:
     close = frame["Close"].astype(float).reset_index(drop=True)
     last = float(close.iloc[-1])
@@ -66,6 +89,12 @@ def trend_snapshot(frame: pd.DataFrame, windows: list[int], return_days: tuple[i
         if not flag:
             break
         streak += 1
+    ema = {span: round(float(close.ewm(span=span, adjust=False).mean().iloc[-1]), 4) for span in (5, 10, 20)} if len(close) >= 20 else {}
+    volume_ratio = None
+    if "Volume" in frame and len(frame) > 20:
+        volume = frame["Volume"].astype(float).reset_index(drop=True)
+        base = float(volume.iloc[-21:-1].mean())
+        volume_ratio = round(float(volume.iloc[-1]) / base, 2) if base else None
     high_20 = float(frame["High"].tail(20).max()) if "High" in frame else None
     low_20 = float(frame["Low"].tail(20).min()) if "Low" in frame else None
     return {
@@ -79,6 +108,10 @@ def trend_snapshot(frame: pd.DataFrame, windows: list[int], return_days: tuple[i
         "above_sma": {str(window): (value is not None and last > value) for window, value in sma.items()},
         "sma20_slope_5d": round(slope, 4) if slope is not None else None,
         "days_above_sma5": streak,
+        "ema": {str(span): value for span, value in ema.items()},
+        "ema_aligned": bool(ema) and last > ema[5] > ema[10] > ema[20],
+        "volume_ratio": volume_ratio,
+        "volume_surges": volume_surges(frame),
         "high_20d": round(high_20, 4) if high_20 is not None else None,
         "low_20d": round(low_20, 4) if low_20 is not None else None,
         "trend": classify_trend(last, sma, slope),
@@ -99,17 +132,94 @@ def macro_snapshot(frame: pd.DataFrame, unit: str) -> dict[str, Any]:
     return out
 
 
-def is_strong(snapshot: dict[str, Any], rules: dict[str, Any] | None = None, *, leader_key: str = "ret_5d") -> bool:
-    """Bullish structure that has held above the 5-day SMA for the configured number of sessions."""
+POSITIVE_WORDS = (
+    "beat", "beats", "raise", "raises", "raised", "hike", "upgrade", "upgrades", "upgraded", "record", "contract", "partnership",
+    "deal", "wins", "awarded", "surge", "surges", "soar", "soars", "jump", "jumps", "rall", "outperform", "buy rating", "expands",
+    "approval", "approved", "boost", "tops", "strong demand",
+)
+NEGATIVE_WORDS = (
+    "miss", "misses", "cut", "cuts", "lower", "lowers", "downgrade", "downgraded", "probe", "investigation", "lawsuit", "plunge",
+    "tumble", "sink", "sinks", "slide", "slides", "warn", "delay", "short seller", "offering", "recall", "halt", "concern", "falls",
+)
+_TARGET = re.compile(r"price target .*?to \$?([\d.]+) from \$?([\d.]+)", re.IGNORECASE)
+
+
+def headline_tone(title: str) -> int:
+    """+1 / -1 / 0 from keywords, with explicit price-target moves taking precedence."""
+    match = _TARGET.search(title)
+    if match:
+        new, old = float(match.group(1)), float(match.group(2))
+        return 1 if new > old else -1 if new < old else 0
+    text = f" {title.lower()} "
+    positive = any(re.search(rf"\b{re.escape(word)}", text) for word in POSITIVE_WORDS)
+    negative = any(re.search(rf"\b{re.escape(word)}", text) for word in NEGATIVE_WORDS)
+    return 0 if positive == negative else (1 if positive else -1)
+
+
+GENERIC_NAME_WORDS = {"the", "advanced", "american", "general", "united", "international", "first", "global", "texas", "national"}
+_NAME_SUFFIX = re.compile(r",?\s+(inc|corp|corporation|co|company|holdings|group|plc|ltd|limited|n\.v|s\.a|ag|se|class [a-z])\.?$", re.IGNORECASE)
+
+
+def name_keys(symbol: str, short_name: str | None) -> list[str]:
+    """Strings a headline must contain to be about this company: the ticker, its short name, and a distinctive first word."""
+    keys = [symbol.split("-")[0]]
+    name = (short_name or "").strip()
+    while name and _NAME_SUFFIX.search(name):
+        name = _NAME_SUFFIX.sub("", name).strip()
+    if name:
+        keys.append(name)
+        first = name.split()[0].strip(",.")
+        if len(first) >= 4 and first.lower() not in GENERIC_NAME_WORDS:
+            keys.append(first)
+    return list(dict.fromkeys(keys))
+
+
+def mentions(title: str, keys: list[str]) -> bool:
+    return any(re.search(rf"\b{re.escape(key)}\b", title) if key.isupper() else key.lower() in title.lower() for key in keys)
+
+
+def news_signal(items: list[dict], now_epoch: int, *, lookback_days: int = 7, keys: list[str] | None = None) -> dict[str, Any]:
+    recent = [item for item in items if now_epoch - int(item.get("providerPublishTime") or 0) <= lookback_days * 86400]
+    if keys:
+        recent = [item for item in recent if mentions(item.get("title", ""), keys)]
+    positive = [item["title"] for item in recent if headline_tone(item.get("title", "")) > 0]
+    negative = [item["title"] for item in recent if headline_tone(item.get("title", "")) < 0]
+    status = "none" if not positive and not negative else "positive" if len(positive) > len(negative) else "negative" if len(negative) > len(positive) else "mixed"
+    return {"status": status, "positive": positive[:3], "negative": negative[:3], "headlines": len(recent)}
+
+
+def core_strength(snapshot: dict[str, Any], rules: dict[str, Any] | None = None, *, leader_key: str = "ret_5d") -> bool:
+    """Hard requirements: held above the 5-day SMA, above the 20-day SMA, and a positive short-term return."""
     rules = rules or {}
-    sma20, sma50 = snapshot["sma"].get("20"), snapshot["sma"].get("50")
+    sma20 = snapshot["sma"].get("20")
     if snapshot.get("days_above_sma5", 0) < int(rules.get("min_days_above_sma5", 2)):
         return False
     if rules.get("require_close_above_sma20", True) and not (sma20 and snapshot["close"] > sma20):
         return False
-    if rules.get("require_sma20_above_sma50", True) and not (sma20 and sma50 and sma20 > sma50):
-        return False
     return (snapshot.get(leader_key) or 0) > 0
+
+
+def strength_checks(snapshot: dict[str, Any], rules: dict[str, Any] | None = None, *, leader_key: str = "ret_5d") -> dict[str, Any]:
+    rules = rules or {}
+    sma20, sma50 = snapshot["sma"].get("20"), snapshot["sma"].get("50")
+    checks = {
+        "ema_aligned": bool(snapshot.get("ema_aligned")),
+        "sma20_above_sma50": bool(sma20 and sma50 and sma20 > sma50),
+        "volume_surge": bool(snapshot.get("volume_surges")),
+        "positive_news": (snapshot.get("news") or {}).get("status") == "positive",
+    }
+    core = core_strength(snapshot, rules, leader_key=leader_key)
+    structure = checks["ema_aligned"] or checks["sma20_above_sma50"]
+    score = sum(checks.values())
+    if (snapshot.get("news") or {}).get("status") == "negative":
+        score -= 1
+    strong = core and score >= int(rules.get("min_score", 2)) and (structure or not rules.get("require_structure", True))
+    emerging = core and not strong and (checks["volume_surge"] or checks["positive_news"])
+    return {"core": core, **checks, "structure": structure, "score": score, "strong": strong, "emerging": emerging}
+
+
+def is_strong(snapshot: dict[str, Any], rules: dict[str, Any] | None = None, *, leader_key: str = "ret_5d") -> bool:
+    return strength_checks(snapshot, rules, leader_key=leader_key)["strong"]
 
 
 def rank_sectors(
@@ -151,11 +261,15 @@ def rank_sectors(
                         "ret_sector": snapshots[ticker].get(sector_key),
                         "trend": snapshots[ticker]["trend"],
                         "days_above_sma5": snapshots[ticker].get("days_above_sma5"),
+                        "checks": strength_checks(snapshots[ticker], strength, leader_key=leader_key),
+                        "volume_surges": snapshots[ticker].get("volume_surges", []),
+                        "news": snapshots[ticker].get("news"),
                         "strong": is_strong(snapshots[ticker], strength, leader_key=leader_key),
                     }
                     for ticker in by_5d
                 ],
                 "strong": [ticker for ticker in by_5d if is_strong(snapshots[ticker], strength, leader_key=leader_key)],
+                "emerging": [ticker for ticker in by_5d if strength_checks(snapshots[ticker], strength, leader_key=leader_key)["emerging"]],
                 "leaders": [ticker for ticker in by_5d if is_strong(snapshots[ticker], strength, leader_key=leader_key)][: max(1, leaders_per_sector)],
             }
         )
@@ -600,6 +714,14 @@ def run_scan(
             frames[symbol] = frame
 
     snapshots = {symbol: trend_snapshot(frames[symbol], windows, (leader_days, sector_days)) for symbol in tickers if symbol in frames}
+    surge_rules = config.get("strength", {})
+    for symbol, snapshot in snapshots.items():
+        snapshot["volume_surges"] = volume_surges(
+            frames[symbol],
+            lookback=int(surge_rules.get("surge_lookback_days", 10)),
+            min_return_pct=float(surge_rules.get("surge_min_return_pct", 3.0)),
+            volume_multiple=float(surge_rules.get("surge_volume_multiple", 1.5)),
+        )
     macro = {symbol: {**config["macro"][symbol], **macro_snapshot(frames[symbol], config["macro"][symbol]["unit"])} for symbol in macro_symbols if symbol in frames}
     rate = DEFAULT_RATE
     if rate_symbol in frames:
@@ -619,6 +741,23 @@ def run_scan(
         if quote.get("marketState") == "REGULAR" and quote.get("regularMarketPrice"):
             item["live"] = {"price": quote["regularMarketPrice"], "change_pct": round(float(quote.get("regularMarketChangePercent") or 0), 2)}
     config = {**config, "sectors": filter_sectors_by_cap(config["sectors"], quotes)}
+    strength_rules = config.get("strength", {})
+    candidates = sorted(
+        {ticker for sector in config["sectors"].values() for ticker in sector["members"] if ticker in snapshots and core_strength(snapshots[ticker], strength_rules, leader_key=f"ret_{leader_days}d")}
+    )
+
+    def fetch_news(symbol: str) -> tuple[str, dict | None]:
+        try:
+            keys = name_keys(symbol, quotes.get(symbol, {}).get("shortName"))
+            return symbol, news_signal(client.news(symbol), now_epoch, lookback_days=int(strength_rules.get("news_lookback_days", 7)), keys=keys)
+        except Exception:
+            return symbol, None
+
+    if not skip_events:
+        with ThreadPoolExecutor(max_workers=history_workers) as pool:
+            for symbol, signal in pool.map(fetch_news, candidates):
+                if signal is not None:
+                    snapshots[symbol]["news"] = signal
     sectors = rank_sectors(
         config["sectors"], snapshots, settings.get("leaders_per_sector", 1), sector_days=sector_days, leader_days=leader_days, strength=config.get("strength")
     )

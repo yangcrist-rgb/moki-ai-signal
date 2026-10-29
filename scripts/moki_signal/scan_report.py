@@ -152,7 +152,49 @@ def _render_sectors(result: dict[str, Any], out: list[str]) -> None:
             [str(sector["rank"]), sector["name"], _signed(sector["score_20d"]), zh(sector["score_basis"]), f"{sector['breadth_above_sma20']}% / {sector['breadth_above_sma50']}%", f"{len(strong)}/{len(sector['members'])}", names]
         )
     out += _table(["排名", "板块", f"{sector_days}日", "口径", "广度 >SMA20/50", "强势数", f"强势股（{leader_days}日涨幅）"], rows)
-    out += ["", "强势股标准：连续站稳 5 日线（≥2 个交易日收盘在 SMA5 上方）、收盘 > SMA20、SMA20 > SMA50，且短期涨幅为正。"]
+
+    detail, seen = [], set()
+    for sector in result["sectors"]:
+        for item in sector["members"]:
+            if not item.get("strong") or item["ticker"] in seen:
+                continue
+            seen.add(item["ticker"])
+            checks = item.get("checks", {})
+            surge = item.get("volume_surges") or []
+            last = surge[-1] if surge else None
+            news = item.get("news") or {}
+            headline = (news.get("positive") or news.get("negative") or ["-"])[0]
+            detail.append(
+                [
+                    sector["name"],
+                    item["ticker"],
+                    _signed(item["ret_leader"]),
+                    str(item.get("days_above_sma5")),
+                    "✓" if checks.get("ema_aligned") else "✗",
+                    "✓" if checks.get("sma20_above_sma50") else "✗",
+                    f"✓ {last['date'][5:]} {_signed(last['ret_pct'])} 量比 {last['volume_ratio']}" if last else "✗",
+                    {"positive": "✓ 利好", "negative": "✗ 利空", "mixed": "多空交织", "none": "-"}.get(news.get("status"), "-"),
+                    headline[:60],
+                    str(checks.get("score", "-")),
+                ]
+            )
+    emerging = [
+        f"{item['ticker']}（{sector['name']}，{'放量' if item['checks'].get('volume_surge') else ''}{'+' if item['checks'].get('volume_surge') and item['checks'].get('positive_news') else ''}{'利好' if item['checks'].get('positive_news') else ''}）"
+        for sector in result["sectors"]
+        for item in sector["members"]
+        if item.get("checks", {}).get("emerging")
+    ]
+    if detail:
+        out += ["", "### 强势股明细", ""]
+        out += _table(["板块", "代码", f"{leader_days}日", "站稳MA5天数", "EMA5>10>20", "SMA20>50", "放量大涨（近10日）", "新闻", "代表标题", "得分"], detail)
+    if emerging:
+        out += ["", "**潜在转强（有放量或利好，但均线结构未修复，暂不算强势）：** " + "，".join(dict.fromkeys(emerging))]
+    out += [
+        "",
+        "强势股标准：必要条件为连续 ≥2 日收盘在 SMA5 上方、收盘 > SMA20、短期涨幅为正；"
+        "加分项为 EMA5>EMA10>EMA20 多头排列、SMA20>SMA50、近 10 日有放量大涨（涨幅 ≥3% 且量 ≥20 日均量 1.5 倍）、近 7 日利好新闻（利空新闻扣 1 分），得分 ≥2 且至少满足一项均线结构（EMA 排列或 SMA20>SMA50）才算强势。"
+        "新闻按英文标题关键词与目标价调整方向自动判断，需人工复核。",
+    ]
 
 
 def _render_options(result: dict[str, Any], out: list[str]) -> None:

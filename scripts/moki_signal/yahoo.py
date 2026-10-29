@@ -18,6 +18,7 @@ CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
 QUOTE_URL = "https://query2.finance.yahoo.com/v7/finance/quote"
 OPTIONS_URL = "https://query2.finance.yahoo.com/v7/finance/options/{symbol}"
 CRUMB_URL = "https://query2.finance.yahoo.com/v1/test/getcrumb"
+SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
 QUOTE_FIELDS = (
     "shortName,longName,marketCap,regularMarketPrice,regularMarketChangePercent,regularMarketPreviousClose,earningsTimestamp,earningsTimestampStart,"
     "earningsTimestampEnd,isEarningsDateEstimate,epsForward,epsCurrentYear,epsTrailingTwelveMonths,quoteType,"
@@ -64,6 +65,11 @@ class YahooClient:
                     pass
                 self._crumb = self._get(CRUMB_URL).decode("utf-8").strip()
             return self._crumb
+
+    def news(self, symbol: str, count: int = 10) -> list[dict]:
+        query = urlencode({"q": symbol, "newsCount": count, "quotesCount": 0})
+        items = self._get_json(f"{SEARCH_URL}?{query}").get("news", []) or []
+        return [item for item in items if symbol in (item.get("relatedTickers") or [symbol])]
 
     def history(self, symbol: str, *, range_: str = "1y") -> pd.DataFrame:
         url = CHART_URL.format(symbol=quote(symbol)) + "?" + urlencode({"range": range_, "interval": "1d", "events": "history"})
