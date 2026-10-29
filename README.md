@@ -144,6 +144,14 @@ python scripts\options_decision_agent.py --profile .\configs\options_agent_profi
 - 管理价位：60% / 80% 止盈回补价；Put Delta 到 0.30 观察、0.35 向下向后滚动、0.40 必须防守、0.50 接股复核时对应的正股价；
 - `shares` ≥ 100 时给出 Covered Call 候选；到期前有财报的合约会标注。
 
+档案还可记录现金与已有期权仓位，Agent 会输出账户概览（权益、现金占比、未实现盈亏、每日 Theta、各标的 Delta 美元敞口）和逐笔管理提示（≤90/≤60 天滚动、盈利 50%/100% 止盈、亏损 50% 复核、趋势相反、到期前财报）。盘前/盘后时段会按扩展时段价格估算期权盈亏，卖 Put 占用现金不超过 `cash_usd`：
+
+```json
+"cash_usd": 13109.25,
+"symbols": [{"symbol": "CRDO", "role": "holding", "shares": 100, "cost_basis": 171.5}],
+"option_positions": [{"symbol": "AMD", "type": "call", "expiry": "2027-01-15", "strike": 600, "contracts": 1, "cost": 48.78}]
+```
+
 结果写入 `<output-dir>/<档案名>-<日期>.md` 与 `.json`。
 
 ## 策略与数据边界
