@@ -363,7 +363,22 @@ def _load_volume_history(path: Path) -> dict[str, dict[str, dict]]:
     return {}
 
 
-def near_term_options(cache: ChainCache, symbol: str, rate: float, settings: dict, history: dict, as_of_label: str) -> dict[str, Any]:
+def chain_session(now_epoch: int) -> tuple[str, bool]:
+    """Trading date the live option-chain volume belongs to, and whether that session is still open."""
+    now = datetime.fromtimestamp(now_epoch, EASTERN)
+    day = now.date()
+    opened = now.weekday() < 5 and now.time() >= datetime.strptime("09:30", "%H:%M").time()
+    if not opened:
+        day -= timedelta(days=1)
+        while day.weekday() >= 5:
+            day -= timedelta(days=1)
+    intraday = opened and now.time() < datetime.strptime("16:00", "%H:%M").time()
+    return day.strftime("%Y-%m-%d"), intraday
+
+
+def near_term_options(
+    cache: ChainCache, symbol: str, rate: float, settings: dict, history: dict, as_of_label: str, *, intraday: bool = False
+) -> dict[str, Any]:
     history_days = int(settings.get("history_days", 20))
     spot = cache.spot(symbol)
     if not spot:
@@ -388,6 +403,11 @@ def near_term_options(cache: ChainCache, symbol: str, rate: float, settings: dic
     stored_gex = {key: gex.get(key) for key in ("net_gex_usd_per_1pct", "call_wall", "put_wall", "regime")} if gex.get("status") == "estimated" else None
     ticker_history[as_of_label] = {"total": total, "calls": call_volume, "puts": put_volume, "gex": stored_gex or ticker_history.get(as_of_label, {}).get("gex")}
     anomaly = volume_anomaly(total, prior, minimum_days=settings["anomaly_min_baseline_days"], multiple=settings["anomaly_multiple"])
+    if intraday:
+        # Partial-session volume can only confirm a spike, not rule one out.
+        anomaly = {**anomaly, "intraday": True}
+        if anomaly["status"] == "normal":
+            anomaly["status"] = "intraday-partial"
     return {
         "spot": round(spot, 4),
         "expirations": [datetime.fromtimestamp(value, ZoneInfo("UTC")).strftime("%Y-%m-%d") for value in near],
@@ -594,6 +614,10 @@ def run_scan(
         quotes = client.quotes(quote_symbols)
     except Exception as exc:
         warnings.append(f"quote batch unavailable: {type(exc).__name__}: {exc}")
+    for symbol, item in indices.items():
+        quote = quotes.get(symbol, {})
+        if quote.get("marketState") == "REGULAR" and quote.get("regularMarketPrice"):
+            item["live"] = {"price": quote["regularMarketPrice"], "change_pct": round(float(quote.get("regularMarketChangePercent") or 0), 2)}
     config = {**config, "sectors": filter_sectors_by_cap(config["sectors"], quotes)}
     sectors = rank_sectors(
         config["sectors"], snapshots, settings.get("leaders_per_sector", 1), sector_days=sector_days, leader_days=leader_days, strength=config.get("strength")
@@ -617,11 +641,11 @@ def run_scan(
         option_tickers = list(dict.fromkeys(settings.get("focus", []) + watch + list(holdings)))
         history_path = cache_dir / "options-volume-history.json"
         history = _load_volume_history(history_path)
-        as_of_label = data_end or as_of.strftime("%Y-%m-%d")
+        as_of_label, intraday = chain_session(now_epoch)
 
         def scan_one(symbol: str) -> tuple[str, dict | None, str | None]:
             try:
-                return symbol, near_term_options(cache, symbol, rate, settings, history, as_of_label), None
+                return symbol, near_term_options(cache, symbol, rate, settings, history, as_of_label, intraday=intraday), None
             except Exception as exc:
                 return symbol, None, f"options {symbol}: {type(exc).__name__}: {exc}"
 
@@ -653,7 +677,7 @@ def run_scan(
         anomalies = [
             ticker for ticker, item in per_ticker.items() if item["anomaly"]["status"] == "spike" or item["gex_change"]["status"] == "changed"
         ]
-        options_section = {"status": "live-snapshot", "tickers": per_ticker, "by_sector": by_sector, "anomalies": anomalies, "chain_reset": reset, "risk_free_rate": round(rate, 4)}
+        options_section = {"status": "live-snapshot", "session_date": as_of_label, "intraday": intraday, "tickers": per_ticker, "by_sector": by_sector, "anomalies": anomalies, "chain_reset": reset, "risk_free_rate": round(rate, 4)}
 
         leader_rows = []
         chosen: set[str] = set()

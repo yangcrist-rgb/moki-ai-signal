@@ -11,8 +11,16 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from moki_signal.options_agent import cash_limit, csp_candidate, extended_hours, long_call_signals, long_term_trend, portfolio_summary  # noqa: E402
-from moki_signal.options_math import Contract, bs_delta, pick_by_delta  # noqa: E402
+from moki_signal.options_agent import (  # noqa: E402
+    cash_limit,
+    csp_candidate,
+    evaluate_option_position,
+    extended_hours,
+    long_call_signals,
+    long_term_trend,
+    portfolio_summary,
+)
+from moki_signal.options_math import Contract, bs_delta, bs_price, pick_by_delta  # noqa: E402
 from moki_signal.universe import holdings_from_profile, load_universe  # noqa: E402
 
 
@@ -101,3 +109,28 @@ class AgentRuleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaleQuoteTests(unittest.TestCase):
+    def test_in_session_stale_quote_repriced_from_previous_close(self) -> None:
+        now = int(pd.Timestamp("2026-10-29 10:00", tz="America/New_York").timestamp())
+        expiry = int(pd.Timestamp("2027-01-15", tz="UTC").timestamp())
+        last = round(bs_price("call", 416.0, 400.0, 78 / 365, 0.04, 0.5), 2)
+        contract = Contract("AMAT270115C400", "call", 400.0, expiry, 79, 0.0, 0.0, last, 0, 700, 0.0)
+
+        class Cache:
+            now_epoch = now
+
+            def expirations(self, symbol: str) -> list[int]:
+                return [expiry]
+
+            def contracts(self, symbol: str, expiration: int) -> list[Contract]:
+                return [contract]
+
+        position = {"symbol": "AMAT", "type": "call", "strike": 400, "expiry": "2027-01-15", "cost": 35, "contracts": 1}
+        row = evaluate_option_position(Cache(), position, 400.0, 0.04, "bearish", None, None, 416.0)
+        self.assertEqual(row["mid_source"], "repriced-from-last")
+        self.assertLess(row["mid"], last - 5)
+        self.assertAlmostEqual(row["iv_pct"], 50.0, delta=1.0)
+        unchanged = evaluate_option_position(Cache(), position, 400.0, 0.04, "bearish", None, None, None)
+        self.assertEqual(unchanged["mid"], last)

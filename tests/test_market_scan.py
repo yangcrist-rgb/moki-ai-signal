@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from moki_signal.market_scan import (  # noqa: E402
     build_macro_events,
+    chain_session,
     classify_trend,
     earnings_session,
     filter_sectors_by_cap,
@@ -179,3 +180,12 @@ class StrengthAndEventTests(unittest.TestCase):
         self.assertEqual(filtered["big"]["members"], ["A"])
         self.assertEqual(filtered["any"]["members"], ["A", "B"])
         self.assertEqual(filter_sectors_by_cap(sectors, {})["big"]["members"], ["A", "B", "C"])
+
+    def test_chain_session_dates(self) -> None:
+        def epoch(text: str) -> int:
+            return int(pd.Timestamp(text, tz="America/New_York").timestamp())
+
+        self.assertEqual(chain_session(epoch("2026-10-29 05:00")), ("2026-10-28", False))
+        self.assertEqual(chain_session(epoch("2026-10-29 09:45")), ("2026-10-29", True))
+        self.assertEqual(chain_session(epoch("2026-10-29 17:00")), ("2026-10-29", False))
+        self.assertEqual(chain_session(epoch("2026-11-02 08:00")), ("2026-10-30", False))

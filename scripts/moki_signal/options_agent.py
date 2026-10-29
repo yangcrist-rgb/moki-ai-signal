@@ -110,7 +110,14 @@ def long_call_signals(position: dict[str, Any], trend_state: str) -> list[str]:
 
 
 def evaluate_option_position(
-    cache: ChainCache, position: dict, spot: float, rate: float, trend_state: str, earnings_epoch: int | None, ext: dict | None
+    cache: ChainCache,
+    position: dict,
+    spot: float,
+    rate: float,
+    trend_state: str,
+    earnings_epoch: int | None,
+    ext: dict | None,
+    reference_spot: float | None = None,
 ) -> dict[str, Any]:
     kind = str(position.get("type", "call")).lower()
     strike = float(position["strike"])
@@ -130,6 +137,14 @@ def evaluate_option_position(
         return row
     mid = contract.mid
     years = row["dte"] / 365
+    live_quote = contract.bid > 0 and contract.ask > 0
+    repriced_iv = None
+    # In session Yahoo can lag with empty quotes; the last trade then reflects the prior close, not the current spot.
+    if not live_quote and ext is None and reference_spot and contract.last > 0 and abs(reference_spot - spot) > 1e-6:
+        repriced_iv = implied_vol(kind, contract.last, reference_spot, strike, years, rate)
+        if repriced_iv is not None:
+            mid = bs_price(kind, spot, strike, years, rate, repriced_iv)
+            row["mid_source"] = "repriced-from-last"
     value = mid * 100 * contracts
     intrinsic = max(0.0, spot - strike) if kind == "call" else max(0.0, strike - spot)
     row.update(
@@ -149,7 +164,9 @@ def evaluate_option_position(
         }
     )
     # Without a live bid/ask (outside the regular session) Yahoo's IV field is a placeholder.
-    iv, iv_source = (contract.iv, "yahoo") if usable_iv(contract) and contract.bid > 0 and contract.ask > 0 else (None, None)
+    iv, iv_source = (contract.iv, "yahoo") if usable_iv(contract) and live_quote else (None, None)
+    if repriced_iv is not None:
+        iv, iv_source = repriced_iv, "implied-from-last"
     if iv is None and mid > 0:
         iv, iv_source = implied_vol(kind, mid, spot, strike, years, rate), "implied-from-last"
     if iv is not None:
@@ -330,7 +347,8 @@ def evaluate_symbol(
             stock_position.update({"pnl": round((spot - float(basis)) * shares, 2), "pnl_pct": round((spot / float(basis) - 1) * 100, 2)})
             if ext:
                 stock_position["extended_pnl"] = round((ext["price"] - float(basis)) * shares, 2)
-    option_positions = [evaluate_option_position(cache, item, spot, rate, trend["state"], earnings_epoch, ext) for item in positions or []]
+    reference = quote.get("regularMarketPreviousClose") if quote.get("marketState") == "REGULAR" else None
+    option_positions = [evaluate_option_position(cache, item, spot, rate, trend["state"], earnings_epoch, ext, reference) for item in positions or []]
 
     return {
         "symbol": symbol,
@@ -472,7 +490,7 @@ def _portfolio_section(result: dict[str, Any]) -> list[str]:
             est = pos.get("extended_estimate")
             est_label = f"{_money(est['pnl'])}（{est['pnl_pct']:+.1f}%）" if est else "-"
             rows.append(
-                f"| {row['symbol']} | {label} | {pos['cost']} | {row['spot']:,.2f} | {ext_label} | {pos['mid']:.2f} | {_money(pos['value'])} | "
+                f"| {row['symbol']} | {label} | {pos['cost']} | {row['spot']:,.2f} | {ext_label} | {pos['mid']:.2f}{'*' if pos.get('mid_source') else ''} | {_money(pos['value'])} | "
                 f"{_money(pos['pnl'])}（{pos['pnl_pct']:+.1f}%） | {est_label} | {pos.get('delta', '-')} | {_money(pos.get('theta_per_day_usd'))} | {pos['dte']} | {'；'.join(pos['signals'])} |"
             )
     if rows:
@@ -480,10 +498,10 @@ def _portfolio_section(result: dict[str, Any]) -> list[str]:
             "",
             "## 持仓管理",
             "",
-            "| 代码 | 持仓 | 成本 | 收盘价 | 盘前/盘后 | 期权中间价 | 市值 | 盈亏（收盘） | 盈亏（按盘前/盘后估） | Delta | 每日 Theta | 剩余天数 | 管理提示 |",
+            "| 代码 | 持仓 | 成本 | 现价 | 盘前/盘后 | 期权中间价 | 市值 | 盈亏（收盘） | 盈亏（按盘前/盘后估） | Delta | 每日 Theta | 剩余天数 | 管理提示 |",
             "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ] + rows
-        out += ["", "期权中间价取最近买卖报价（非交易时段无报价时取最新成交价，IV 由成交价反推）；盘前/盘后估值按相同 IV 用 Black-Scholes 平移正股价得到，不含 IV 变化（财报后 IV 通常回落）。"]
+        out += ["", "期权中间价取最近买卖报价；无报价时取最新成交价反推 IV，盘中再按现价重估（标 *）；盘前/盘后估值按相同 IV 用 Black-Scholes 平移正股价得到，不含 IV 变化（财报后 IV 通常回落）。"]
     return out + [""]
 
 

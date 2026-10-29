@@ -57,7 +57,9 @@ def _trend_rows(items: dict[str, dict], windows: list[str], with_name: bool) -> 
 def _anomaly_flag(anomaly: dict) -> str:
     if anomaly["status"] == "building-baseline":
         return f"积累基线({anomaly['baseline_days']}/{anomaly['required_days']})"
-    flag = "**放量**" if anomaly["status"] == "spike" else anomaly["status"]
+    if anomaly["status"] == "intraday-partial":
+        return f"盘中未收盘 x{anomaly['ratio']}" if anomaly.get("ratio") is not None else "盘中未收盘"
+    flag = "**放量**" if anomaly["status"] == "spike" else {"normal": "正常"}.get(anomaly["status"], anomaly["status"])
     return flag + (f" x{anomaly['ratio']}" if anomaly.get("ratio") is not None else "")
 
 
@@ -82,7 +84,14 @@ def _render_macro(result: dict[str, Any], out: list[str]) -> None:
 def _render_market(result: dict[str, Any], windows: list[str], out: list[str]) -> None:
     regime = result["regime"]
     out += ["", "## 2. 大盘（三大指数 + SOXX + IGV）", ""]
-    out += _table(["代码", "名称", "收盘", "1日", "5日", "20日", "均线位置", "趋势"], _trend_rows(result["indices"], windows, True))
+    rows = _trend_rows(result["indices"], windows, True)
+    headers = ["代码", "名称", "收盘", "1日", "5日", "20日", "均线位置", "趋势"]
+    if any("live" in item for item in result["indices"].values()):
+        headers.insert(3, "盘中")
+        for row, item in zip(rows, result["indices"].values()):
+            live = item.get("live")
+            row.insert(3, f"{_num(live['price'])}（{_signed(live['change_pct'])}）" if live else "-")
+    out += _table(headers, rows)
     out += [
         "",
         f"市场状态：**{zh(regime['label'])}**（三大指数多头 {regime['bullish_indices']}/{regime.get('index_count', 3)}，"
@@ -155,6 +164,8 @@ def _render_options(result: dict[str, Any], out: list[str]) -> None:
     tickers = options["tickers"]
     anomalies = options.get("anomalies", [])
     reset = options.get("chain_reset", [])
+    if options.get("intraday"):
+        out += [f"> 盘中快照（交易日 {options['session_date']}）：成交量未收盘，只有已超过 2 倍基线才判为放量；收盘后重跑可得全天结论。", ""]
     if reset:
         out += [f"> **数据状态：{len(reset)}/{len(tickers)} 只标的的期权链 OI/报价/IV 已被 Yahoo 清零（非常规交易时段）。** 成交量仍为上一交易日数据，GEX、Delta 与第 6 节合约需在美股常规时段（ET 09:30–16:00）重跑。", ""]
     if anomalies:

@@ -19,7 +19,7 @@ QUOTE_URL = "https://query2.finance.yahoo.com/v7/finance/quote"
 OPTIONS_URL = "https://query2.finance.yahoo.com/v7/finance/options/{symbol}"
 CRUMB_URL = "https://query2.finance.yahoo.com/v1/test/getcrumb"
 QUOTE_FIELDS = (
-    "shortName,longName,marketCap,regularMarketPrice,earningsTimestamp,earningsTimestampStart,"
+    "shortName,longName,marketCap,regularMarketPrice,regularMarketChangePercent,regularMarketPreviousClose,earningsTimestamp,earningsTimestampStart,"
     "earningsTimestampEnd,isEarningsDateEstimate,epsForward,epsCurrentYear,epsTrailingTwelveMonths,quoteType,"
     "marketState,postMarketPrice,postMarketChangePercent,preMarketPrice,preMarketChangePercent"
 )
