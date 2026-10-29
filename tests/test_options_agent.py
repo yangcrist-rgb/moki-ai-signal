@@ -24,7 +24,7 @@ class UniverseTests(unittest.TestCase):
     def test_bundled_universe_maps_to_scan_settings(self) -> None:
         config = load_universe(ROOT / "configs" / "us_market_universe.json")
         self.assertEqual(config["indices"]["SPY"], "标普500")
-        self.assertIn("^SOX", config["indices"])
+        self.assertEqual(list(config["indices"]), ["SPY", "QQQ", "DIA", "SOXX", "IGV"])
         self.assertEqual(config["macro"]["^TNX"]["unit"], "yield")
         self.assertEqual(config["macro"]["CL=F"]["unit"], "usd")
         self.assertEqual(config["sectors"]["storage"]["members"][0], "MU")
