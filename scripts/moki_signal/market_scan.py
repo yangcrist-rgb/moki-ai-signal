@@ -60,6 +60,12 @@ def trend_snapshot(frame: pd.DataFrame, windows: list[int], return_days: tuple[i
     if len(close) >= 25 and not math.isnan(sma20_series.iloc[-6]):
         slope = float(sma20_series.iloc[-1] - sma20_series.iloc[-6])
     extra = {f"ret_{days}d": _pct(last, back(days)) for days in return_days if days not in (1, 5, 20)}
+    above5 = (close > close.rolling(5).mean()).to_numpy()
+    streak = 0
+    for flag in above5[::-1]:
+        if not flag:
+            break
+        streak += 1
     high_20 = float(frame["High"].tail(20).max()) if "High" in frame else None
     low_20 = float(frame["Low"].tail(20).min()) if "Low" in frame else None
     return {
@@ -72,6 +78,7 @@ def trend_snapshot(frame: pd.DataFrame, windows: list[int], return_days: tuple[i
         "sma": {str(window): value for window, value in sma.items()},
         "above_sma": {str(window): (value is not None and last > value) for window, value in sma.items()},
         "sma20_slope_5d": round(slope, 4) if slope is not None else None,
+        "days_above_sma5": streak,
         "high_20d": round(high_20, 4) if high_20 is not None else None,
         "low_20d": round(low_20, 4) if low_20 is not None else None,
         "trend": classify_trend(last, sma, slope),
@@ -92,8 +99,27 @@ def macro_snapshot(frame: pd.DataFrame, unit: str) -> dict[str, Any]:
     return out
 
 
+def is_strong(snapshot: dict[str, Any], rules: dict[str, Any] | None = None, *, leader_key: str = "ret_5d") -> bool:
+    """Bullish structure that has held above the 5-day SMA for the configured number of sessions."""
+    rules = rules or {}
+    sma20, sma50 = snapshot["sma"].get("20"), snapshot["sma"].get("50")
+    if snapshot.get("days_above_sma5", 0) < int(rules.get("min_days_above_sma5", 2)):
+        return False
+    if rules.get("require_close_above_sma20", True) and not (sma20 and snapshot["close"] > sma20):
+        return False
+    if rules.get("require_sma20_above_sma50", True) and not (sma20 and sma50 and sma20 > sma50):
+        return False
+    return (snapshot.get(leader_key) or 0) > 0
+
+
 def rank_sectors(
-    sectors: dict[str, dict], snapshots: dict[str, dict], leaders_per_sector: int, *, sector_days: int = 20, leader_days: int = 5
+    sectors: dict[str, dict],
+    snapshots: dict[str, dict],
+    leaders_per_sector: int,
+    *,
+    sector_days: int = 20,
+    leader_days: int = 5,
+    strength: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     sector_key, leader_key = f"ret_{sector_days}d", f"ret_{leader_days}d"
     ranked = []
@@ -119,10 +145,18 @@ def rank_sectors(
                 "breadth_above_sma20": round(above20 / len(members) * 100),
                 "breadth_above_sma50": round(above50 / len(members) * 100),
                 "members": [
-                    {"ticker": ticker, "ret_leader": snapshots[ticker].get(leader_key), "ret_sector": snapshots[ticker].get(sector_key), "trend": snapshots[ticker]["trend"]}
+                    {
+                        "ticker": ticker,
+                        "ret_leader": snapshots[ticker].get(leader_key),
+                        "ret_sector": snapshots[ticker].get(sector_key),
+                        "trend": snapshots[ticker]["trend"],
+                        "days_above_sma5": snapshots[ticker].get("days_above_sma5"),
+                        "strong": is_strong(snapshots[ticker], strength, leader_key=leader_key),
+                    }
                     for ticker in by_5d
                 ],
-                "leaders": by_5d[: max(1, leaders_per_sector)],
+                "strong": [ticker for ticker in by_5d if is_strong(snapshots[ticker], strength, leader_key=leader_key)],
+                "leaders": [ticker for ticker in by_5d if is_strong(snapshots[ticker], strength, leader_key=leader_key)][: max(1, leaders_per_sector)],
             }
         )
     ranked.sort(key=lambda item: item["score_20d"] if item["score_20d"] is not None else -1e9, reverse=True)
@@ -134,6 +168,7 @@ def rank_sectors(
 def market_regime(index_snapshots: dict[str, dict], macro: dict[str, dict]) -> dict[str, Any]:
     core = [index_snapshots[ticker]["trend"] for ticker in ("SPY", "QQQ", "DIA", "IWM") if ticker in index_snapshots]
     bullish, bearish = core.count("bullish"), core.count("bearish")
+    majority = len(core) // 2 + 1
     ten_year = macro.get("^TNX", {}).get("chg_20d")
     oil = macro.get("CL=F", {}).get("chg_20d")
     headwinds = []
@@ -141,13 +176,47 @@ def market_regime(index_snapshots: dict[str, dict], macro: dict[str, dict]) -> d
         headwinds.append(f"10Y 20日上行 {ten_year}bp")
     if oil is not None and oil >= 10:
         headwinds.append(f"原油 20日上涨 {oil}%")
-    if bullish >= 3 and not headwinds:
+    if core and bullish >= majority and not headwinds:
         label = "risk-on"
-    elif bearish >= 3:
+    elif core and bearish >= majority:
         label = "risk-off"
     else:
         label = "mixed"
-    return {"label": label, "bullish_indices": bullish, "bearish_indices": bearish, "headwinds": headwinds}
+    return {"label": label, "bullish_indices": bullish, "bearish_indices": bearish, "index_count": len(core), "headwinds": headwinds}
+
+
+def build_macro_events(config: dict, as_of: pd.Timestamp) -> dict[str, list[dict]]:
+    events = config.get("events", {})
+    lookback = int(events.get("macro_lookback_days", 3))
+    lookahead = int(events.get("lookahead_days", 30))
+    recent, upcoming = [], []
+    for event in events.get("macro", []):
+        day = pd.Timestamp(event["date"])
+        row = {**event, "days_from_as_of": int((day - as_of).days)}
+        if as_of - pd.Timedelta(days=lookback) <= day <= as_of:
+            recent.append(row)
+        elif as_of < day <= as_of + pd.Timedelta(days=lookahead):
+            upcoming.append(row)
+    return {"recent": recent, "upcoming": upcoming}
+
+
+def gex_change(previous: dict | None, current: dict, spot: float, *, wall_shift_pct: float = 3.0, net_change_pct: float = 50.0) -> dict[str, Any]:
+    """Day-over-day GEX shifts: regime flip, wall moves of at least wall_shift_pct of spot, or a large net swing."""
+    if current.get("status") != "estimated":
+        return {"status": "unavailable", "flags": []}
+    if not previous:
+        return {"status": "no-prior-snapshot", "flags": []}
+    flags = []
+    if previous.get("regime") and previous["regime"] != current.get("regime"):
+        flags.append(f"Gamma 翻转 {previous['regime']}→{current['regime']}")
+    for key, label in (("call_wall", "Call 墙"), ("put_wall", "Put 墙")):
+        old, new = previous.get(key), current.get(key)
+        if old and new and abs(new - old) / spot * 100 >= wall_shift_pct:
+            flags.append(f"{label} {old:g}→{new:g}")
+    old_net, new_net = previous.get("net_gex_usd_per_1pct"), current.get("net_gex_usd_per_1pct")
+    if old_net and new_net is not None and abs(new_net - old_net) / abs(old_net) * 100 >= net_change_pct:
+        flags.append(f"净 GEX {(new_net - old_net) / abs(old_net) * 100:+.0f}%")
+    return {"status": "changed" if flags else "stable", "flags": flags}
 
 
 def next_session(day: pd.Timestamp) -> pd.Timestamp:
@@ -300,14 +369,20 @@ def near_term_options(cache: ChainCache, symbol: str, rate: float, settings: dic
     total = call_volume + put_volume
     ticker_history = history.setdefault(symbol, {})
     prior = [entry["total"] for day, entry in sorted(ticker_history.items()) if day < as_of_label][-history_days:]
-    ticker_history[as_of_label] = {"total": total, "calls": call_volume, "puts": put_volume}
+    # Outside the regular session Yahoo zeroes open interest, quotes and IV, so GEX cannot be estimated.
+    chain_reset = bool(contracts) and not any(contract.open_interest for contract in contracts)
+    gex = {"status": "chain-reset"} if chain_reset else gex_summary(contracts, spot, rate)
+    previous_gex = next((entry.get("gex") for day, entry in sorted(ticker_history.items(), reverse=True) if day < as_of_label and entry.get("gex")), None)
+    stored_gex = {key: gex.get(key) for key in ("net_gex_usd_per_1pct", "call_wall", "put_wall", "regime")} if gex.get("status") == "estimated" else None
+    ticker_history[as_of_label] = {"total": total, "calls": call_volume, "puts": put_volume, "gex": stored_gex or ticker_history.get(as_of_label, {}).get("gex")}
     anomaly = volume_anomaly(total, prior, minimum_days=settings["anomaly_min_baseline_days"], multiple=settings["anomaly_multiple"])
     return {
         "spot": round(spot, 4),
         "expirations": [datetime.fromtimestamp(value, ZoneInfo("UTC")).strftime("%Y-%m-%d") for value in near],
         "volume": {"calls": call_volume, "puts": put_volume, "total": total, "put_call_ratio": round(put_volume / call_volume, 2) if call_volume else None},
         "anomaly": anomaly,
-        "gex": gex_summary(contracts, spot, rate),
+        "gex": gex,
+        "gex_change": gex_change(previous_gex, gex, spot),
     }
 
 
@@ -458,6 +533,7 @@ def run_scan(
     skip_options: bool = False,
     skip_events: bool = False,
     workers: int | None = None,
+    profile: dict | None = None,
 ) -> dict[str, Any]:
     client = client or YahooClient()
     now_epoch = int(time.time())
@@ -500,7 +576,9 @@ def run_scan(
 
     indices = {symbol: {"name": name, **snapshots[symbol]} for symbol, name in config["indices"].items() if symbol in snapshots}
     mag7 = {symbol: snapshots[symbol] for symbol in config["magnificent_seven"] if symbol in snapshots}
-    sectors = rank_sectors(config["sectors"], snapshots, settings.get("leaders_per_sector", 1), sector_days=sector_days, leader_days=leader_days)
+    sectors = rank_sectors(
+        config["sectors"], snapshots, settings.get("leaders_per_sector", 1), sector_days=sector_days, leader_days=leader_days, strength=config.get("strength")
+    )
 
     quote_symbols = list(dict.fromkeys([t for t in tickers if not t.startswith("^")] + config["large_cap_earnings"].get("extra_tickers", [])))
     quotes: dict[str, dict] = {}
@@ -513,6 +591,7 @@ def run_scan(
     events: dict[str, Any] = {"status": "skipped"}
     if not skip_events:
         events = build_earnings(quotes, as_of, config, now_epoch, lambda symbol, epoch: straddle_move(cache, symbol, epoch))
+        events["macro"] = build_macro_events(config, as_of)
 
     options_section: dict[str, Any] = {"status": "skipped"}
     playbooks: list[dict] = []
@@ -543,13 +622,37 @@ def run_scan(
                 per_ticker[symbol] = result
         cache_dir.mkdir(parents=True, exist_ok=True)
         history_path.write_text(json.dumps(history, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        options_section = {"status": "live-snapshot", "tickers": per_ticker, "risk_free_rate": round(rate, 4)}
+        by_sector = []
+        grouped: set[str] = set()
+        for sector in sectors:
+            members = [ticker for ticker in config["sectors"][sector["key"]]["members"] if ticker in per_ticker]
+            grouped.update(members)
+            if members:
+                by_sector.append({"sector": sector["name"], "rank": sector["rank"], "tickers": members})
+        others = [ticker for ticker in per_ticker if ticker not in grouped]
+        if others:
+            by_sector.append({"sector": "重点关注", "rank": None, "tickers": others})
+        reset = sorted(symbol for symbol, item in per_ticker.items() if item["gex"].get("status") == "chain-reset")
+        if reset:
+            warnings.append(
+                f"{len(reset)}/{len(per_ticker)} 只标的期权链 OI/报价/IV 被 Yahoo 清零（非常规交易时段），GEX 与期权策略不可用；请在美股常规时段（ET 09:30–16:00）重跑。"
+            )
+        anomalies = [
+            ticker for ticker, item in per_ticker.items() if item["anomaly"]["status"] == "spike" or item["gex_change"]["status"] == "changed"
+        ]
+        options_section = {"status": "live-snapshot", "tickers": per_ticker, "by_sector": by_sector, "anomalies": anomalies, "chain_reset": reset, "risk_free_rate": round(rate, 4)}
 
         leader_rows = []
+        chosen: set[str] = set()
         for sector in sectors[: settings.get("playbook_top_sectors", 5)]:
             for leader in sector["leaders"]:
                 leader_rows.append((sector, leader))
-        leader_rows.extend(({"name": "持仓", "key": "holdings", "rank": None}, ticker) for ticker in holdings if ticker in snapshots)
+                chosen.add(leader)
+        for ticker in anomalies:
+            sector = next((item for item in sectors if ticker in item["strong"]), None)
+            if sector and ticker not in chosen:
+                leader_rows.append((sector, ticker))
+                chosen.add(ticker)
 
         def play(item: tuple[dict, str]) -> dict | None:
             sector, ticker = item
@@ -576,6 +679,15 @@ def run_scan(
         with ThreadPoolExecutor(max_workers=option_workers) as pool:
             playbooks = [book for book in pool.map(play, leader_rows) if book]
 
+    holdings_check: dict[str, Any] | None = None
+    if profile is not None:
+        from .options_agent import run_agent
+
+        try:
+            holdings_check = run_agent(profile, client=client, workers=option_workers)
+        except Exception as exc:
+            warnings.append(f"holdings check: {type(exc).__name__}: {exc}")
+
     return {
         "scan": {"id": SCAN_ID, "version": SCAN_VERSION, "generated_at_utc": datetime.fromtimestamp(now_epoch, ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")},
         "as_of": as_of.strftime("%Y-%m-%d"),
@@ -589,6 +701,7 @@ def run_scan(
         "sectors": sectors,
         "options": options_section,
         "playbooks": playbooks,
+        "holdings_check": holdings_check,
         "warnings": warnings,
         "disclaimer": "规则化研究输出，不构成投资建议；GEX 为 Yahoo 期权链 + Black-Scholes 估算，不代表做市商真实持仓；软件不下单。",
     }

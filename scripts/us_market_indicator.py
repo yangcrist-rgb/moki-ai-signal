@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     parser = argparse.ArgumentParser(description="US market indicator scan: indices, macro, events, sectors, options playbooks")
     parser.add_argument("--universe", type=Path, default=ROOT / "configs" / "us_market_universe.json")
-    parser.add_argument("--profile", type=Path, help="Options agent profile; symbols with shares >= 100 get covered-call legs")
+    parser.add_argument("--profile", type=Path, default=ROOT / "configs" / "options_agent_profile.json", help="Options profile used for the holdings check (step 7)")
+    parser.add_argument("--skip-holdings", action="store_true", help="Skip the holdings check")
     parser.add_argument("--output-dir", type=Path, default=Path.cwd() / "outputs" / "market-indicator")
     parser.add_argument("--cache-dir", type=Path, default=Path.cwd() / ".moki-cache")
     parser.add_argument("--as-of", help="Latest daily bar included, YYYY-MM-DD; option chains are always a live snapshot")
@@ -27,9 +28,13 @@ def main() -> None:
     parser.add_argument("--workers", type=int, help="Override market_cap_workers / option_workers from the universe file")
     args = parser.parse_args()
 
-    config = load_universe(args.universe, args.profile)
+    profile_path = args.profile if (args.profile and args.profile.exists() and not args.skip_holdings) else None
+    config = load_universe(args.universe, profile_path)
+    profile = json.loads(profile_path.read_text(encoding="utf-8")) if profile_path else None
     as_of = pd.Timestamp(args.as_of) if args.as_of else default_as_of()
-    result = run_scan(config, as_of=as_of, cache_dir=args.cache_dir, skip_options=args.skip_options, skip_events=args.skip_events, workers=args.workers)
+    result = run_scan(
+        config, as_of=as_of, cache_dir=args.cache_dir, skip_options=args.skip_options, skip_events=args.skip_events, workers=args.workers, profile=profile
+    )
     target = args.output_dir / (result["data_end"] or as_of.strftime("%Y-%m-%d"))
     target.mkdir(parents=True, exist_ok=True)
     json_path, md_path = target / "market-scan.json", target / "market-scan.md"

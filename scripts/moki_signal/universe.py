@@ -65,7 +65,17 @@ def normalize_universe(raw: dict[str, Any], holdings: list[dict[str, Any]] | Non
             "impact_map": impact_map,
             "extra_tickers": list(impact_map),
         },
-        "events": {"lookahead_days": int(events.get("lookahead_days", 30)), "manual": events.get("manual", [])},
+        "events": {
+            "lookahead_days": int(events.get("lookahead_days", 30)),
+            "manual": events.get("manual", []),
+            "macro": events.get("macro", []),
+            "macro_lookback_days": int(events.get("macro_lookback_days", 3)),
+        },
+        "strength": {
+            "min_days_above_sma5": int(raw.get("strength", {}).get("min_days_above_sma5", 2)),
+            "require_sma20_above_sma50": bool(raw.get("strength", {}).get("require_sma20_above_sma50", True)),
+            "require_close_above_sma20": bool(raw.get("strength", {}).get("require_close_above_sma20", True)),
+        },
     }
 
 
