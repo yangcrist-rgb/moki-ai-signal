@@ -22,6 +22,7 @@ from .options_math import (
     spot_for_put_delta,
     usable_iv,
 )
+from .scan_report import zh
 from .yahoo import YahooClient
 
 
@@ -515,8 +516,8 @@ def _render_agent(result: dict[str, Any]) -> str:
     for row in result["symbols"]:
         trend, gex = row["trend"], row["gex"]
         out.append(
-            f"| {row['symbol']} | {row['role']} | {row['shares']:,.0f} | {row['spot']:,.2f} | {trend['sma20']} | {trend['sma50']} | {trend['sma200']} | {trend['state']} | "
-            f"{gex.get('put_wall') or '-'} | {gex.get('call_wall') or '-'} | {gex.get('regime', '-')} | {(row['earnings_date'] or '-') + ('（已过）' if row.get('earnings_passed') else '')} |"
+            f"| {row['symbol']} | {zh(row['role'])} | {row['shares']:,.0f} | {row['spot']:,.2f} | {trend['sma20']} | {trend['sma50']} | {trend['sma200']} | {zh(trend['state'])} | "
+            f"{gex.get('put_wall') or '-'} | {gex.get('call_wall') or '-'} | {zh(gex.get('regime'))} | {(row['earnings_date'] or '-') + ('（已过）' if row.get('earnings_passed') else '')} |"
         )
     out += ["", "## 现金担保卖 Put 候选", ""]
     rows = []
