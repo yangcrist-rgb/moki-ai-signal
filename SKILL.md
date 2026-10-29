@@ -32,12 +32,12 @@ When the user says 「扫描」 or asks for index/sector breadth, recent leaders
 python scripts/us_market_indicator.py --universe configs/us_market_universe.json --output-dir C:\absolute\workspace\outputs\market-indicator
 ```
 
-The scan loads `configs/options_agent_profile.json` by default (`--skip-holdings` to omit). Read `market-scan.md` and always present it in this 7-step order, as compact Markdown tables:
+The scan loads `configs/options_agent_profile.json` by default (`--skip-holdings` to omit). Read `market-scan.md` and always reply in Chinese, presenting results as compact Markdown tables (prose only when there is very little to say), in this 7-step order:
 
 1. Macro: 10Y/30Y Treasury yields (bp) and WTI oil, plus any headwind.
 2. Market: SPY / QQQ / DIA plus SOXX and IGV — returns, SMA 5/10/20/30/50/100 position, trend, and regime.
 3. Major events: macro calendar (`events.macro`: FOMC, minutes, CPI, NFP — recent 3 days and upcoming), ≥$300B earnings for today and the previous after-close, next-30-day earnings/investor days. Verify reported results with web search when they matter.
-4. Sectors: 20-day rank and breadth, and strong stocks — bullish structure (close > SMA20 > SMA50) holding above the 5-day SMA for ≥2 sessions with a positive 5-day return.
+4. Sectors (七巨头、存储、光通信、服务器、芯片、算力中心、半导体设备、软件、能源、生物科技、医疗、贵金属、金融&银行、无人机、航天、综合传统行业 — the last keeps only ≥$300B names via `minimum_market_cap_usd`): 20-day rank and breadth, and strong stocks — bullish structure (close > SMA20 > SMA50) holding above the 5-day SMA for ≥2 sessions with a positive 5-day return.
 5. Options by sector: near-term volume anomalies (≥2x the median of ≥3 prior snapshots) and GEX changes vs the prior snapshot (gamma flip, wall shift ≥3% of spot, net GEX change ≥50%), with walls and regime.
 6. Option strategies for the strong stocks of the top 5 sectors plus strong anomaly tickers.
 7. Holdings check from the options agent, followed by concrete advice per position.
