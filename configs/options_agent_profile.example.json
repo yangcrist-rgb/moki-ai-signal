@@ -1,0 +1,33 @@
+{
+  "name": "my-us-options-playbook",
+  "account_size_usd": 30000,
+  "risk": {
+    "default_per_trade_cash_pct": 0.12,
+    "near_term_days": 30,
+    "sell_put_min_dte": 25,
+    "sell_put_max_dte": 45,
+    "target_delta_low": 0.18,
+    "target_delta_high": 0.35,
+    "min_open_interest": 200
+  },
+  "symbols": [
+    {
+      "symbol": "INTC",
+      "role": "holding",
+      "shares": 0,
+      "notes": "Core semiconductor watch",
+      "per_trade_cash_limit_usd": 12000
+    },
+    {
+      "symbol": "TSM",
+      "role": "watch",
+      "shares": 0,
+      "notes": "AI supply chain exposure"
+    },
+    {
+      "symbol": "DELL",
+      "role": "watch",
+      "shares": 0
+    }
+  ]
+}

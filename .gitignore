@@ -4,3 +4,4 @@ outputs/
 outputs-repeat/
 __pycache__/
 *.pyc
+configs/options_agent_profile.json
