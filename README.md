@@ -97,6 +97,36 @@ MOKI 会调用仓库自带的 `scripts/bootstrap_signal.py`。因此新用户只
 - 不支持 Agent Skills 的工具：把仓库作为项目打开，让 Agent 遵循根目录的 `SKILL.md`，或直接运行 `scripts/bootstrap_signal.py`。
 - 工具必须能够执行本地 Python 并允许首次运行下载锁定依赖。仅能聊天、不能执行本地命令的软件无法生成文件。
 
+## 美股指标扫描（大盘 → 宏观 → 事件 → 板块 → 期权）
+
+`scripts/us_market_indicator.py` 是独立于信号图的市场扫描，不下单，按 `configs/us_market_universe.json` 依次输出：
+
+1. SPY / QQQ / DIA / IWM、SOX、IGV 与七巨头的 1/5/20 日涨跌、5/10/20/30/50/100 日均线位置和趋势（多头 / 空头 / 震荡）；
+2. WTI 原油、10 年与 30 年美债收益率（收益率变化以 bp 计）；
+3. 当日及前一交易日盘后的大市值（≥3000 亿美元）财报：时段、状态、Yahoo 远期/TTM EPS、平值跨式隐含波动、影响主题与联动标的（`large_cap_earnings.impact_map`）；
+4. 未来 30 日财报及 `events.manual` 中手动维护的投资者日；
+5. 13 个板块的 20 日排名与广度（有 ETF 用 ETF，否则成分股等权），每个板块近 5 日领先股；
+6. 重点名单及板块内市值大于 200 亿美元个股的近端（≤30 DTE）期权成交量异动与估算 GEX 墙；
+7. 20 日最强 5 个板块的领先股：正股价位计划，以及激进 / 保守期权策略。
+
+```powershell
+python scripts\us_market_indicator.py --universe .\configs\us_market_universe.json --output-dir .\outputs\market-indicator
+```
+
+结果写入 `outputs/market-indicator/<数据截止日>/market-scan.md` 与 `market-scan.json`。只看指数/板块时加 `--skip-options`，不查询事件时加 `--skip-events`。
+
+期权策略规则：
+
+| 趋势 | 激进 | 保守 |
+| --- | --- | --- |
+| 多头 | 买平值 Call（Delta≈0.50，21–45 DTE） | 现金担保卖 Put（Delta≈0.30）；持股≥100 股时加 Covered Call |
+| 空头 | 买平值 Put | 买更便宜的虚值 Put（Delta≈0.25）；不卖裸 Call |
+| 震荡 | 不做方向单 | 持股时 Covered Call，否则现金担保卖 Put |
+
+到期日在窗口内取总持仓量最大的一档；合约需满足 OI 与买卖价差过滤，放宽过滤后选中的合约标记为流动性偏薄。卖 Put 同时给出 Put Delta 到 0.30/0.35/0.40/0.50 时的正股"滚动线"；到期前有财报的合约会单独标注。持仓在配置的 `holdings` 中填写 `{"ticker": "AAPL", "shares": 200}`。
+
+成交量异动需至少 3 个历史日快照（存于缓存目录），超过中位数 2 倍才判定，否则显示 `building-baseline`。GEX 基于 Yahoo 期权链与 Black-Scholes 估算，按"做市商多 Call、空 Put"的公开惯例计算，不代表真实持仓。期权链总是实时快照，`--as-of` 只影响日线。
+
 ## 策略与数据边界
 
 - 主数据：通过 Yahoo Finance chart 接口获取美股日线 OHLCV；代码版本 1 仅支持美国股票日线。
@@ -118,7 +148,9 @@ references/                      # 数据、策略与品牌契约
 scripts/bootstrap_signal.py      # 跨工具首次运行与隔离依赖入口
 scripts/run_signal.py            # 已配置 Python 环境的底层入口
 scripts/moki_signal/             # 数据、策略、渲染和输出流水线
-tests/                           # 离线数据解析与核对测试
+scripts/us_market_indicator.py   # 美股指标与期权策略扫描入口
+configs/us_market_universe.json  # 扫描用指数、板块、期权与事件配置
+tests/                           # 离线数据解析、核对与扫描规则测试
 ```
 
 如果提供正式透明横版标识，将其命名为 `assets/brand/moki-logo-horizontal.png`。渲染器会自动优先使用该文件；否则会从已提供的 MOKI 品牌板提取同一锁定组合。

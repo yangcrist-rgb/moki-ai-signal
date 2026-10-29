@@ -1,6 +1,6 @@
 ---
 name: moki-ai
-description: Generate a fixed-template MOKI AI Signal chart for a US stock ticker with a self-contained Yahoo daily-data loader, independent Sina OHLC validation, and the authorized RSI/ZigZag reconstruction. Use when a user asks MOKI AI to run a ticker, create a B/S signal chart, export signal or OHLCV files, verify daily prices, or reproduce the standard MOKI AI Signal image.
+description: Generate a fixed-template MOKI AI Signal chart for a US stock ticker with a self-contained Yahoo daily-data loader, independent Sina OHLC validation, and the authorized RSI/ZigZag reconstruction. Use when a user asks MOKI AI to run a ticker, create a B/S signal chart, export signal or OHLCV files, verify daily prices, or reproduce the standard MOKI AI Signal image. Also use for 「扫描」 / US market scans: index and Magnificent Seven trends, oil and yields, large-cap earnings, sector rank and leaders, option-volume anomalies, GEX, and stock/options playbooks.
 ---
 
 # MOKI AI
@@ -23,6 +23,21 @@ python scripts/bootstrap_signal.py AEHR --output-dir .\outputs
 ```
 
 Use `--as-of YYYY-MM-DD` for reproducible historical results, `--days N` to change the visible calendar window, and `--refresh` to bypass an available local cache. Use `--skip-data-validation` only for diagnostics when Sina cannot be reached.
+
+## US market indicator scan
+
+When the user says 「扫描」 or asks for index/sector breadth, recent leaders, or stock/options strategies, run from the Skill root:
+
+```powershell
+python scripts/us_market_indicator.py --universe configs/us_market_universe.json --output-dir C:\absolute\workspace\outputs\market-indicator
+```
+
+Read `market-scan.md` and present it as compact Markdown tables in this order: indices and Magnificent Seven trend with SMA 5/10/20/30/50/100; oil and 10Y/30Y yields; today's ≥$300B earnings (including the previous session's after-close reports) with impact on linked tickers; next-30-day events; sector 20-day rank, breadth, and top names by 5-day return; option-volume anomalies and estimated GEX; stock plans and aggressive/conservative option playbooks for leaders of the top 5 sectors.
+
+- Option-volume anomalies need three prior daily snapshots and a 2x median threshold; report `building-baseline` until then.
+- GEX is a Yahoo-chain/Black-Scholes estimate, not dealer inventory. Investor days come only from `events.manual` or explicit web research.
+- Playbooks: bullish → buy-call / cash-secured-put (+ covered-call if long ≥100 shares); bearish → buy-put / cheaper OTM put, never naked calls; range → no directional trade, covered-call or CSP.
+- Flag contracts marked thin and any earnings before expiry. Use `--skip-options` only when the user wants the index/sector tape alone. This scan is not investment advice and places no orders.
 
 ## Boundaries
 
