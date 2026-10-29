@@ -165,6 +165,18 @@ def rank_sectors(
     return ranked
 
 
+def filter_sectors_by_cap(sectors: dict[str, dict], quotes: dict[str, dict]) -> dict[str, dict]:
+    """Drop members below a sector's ``min_market_cap``; keep the sector unfiltered when caps are unknown."""
+    out = {}
+    for key, sector in sectors.items():
+        floor = sector.get("min_market_cap") or 0
+        caps = {ticker: quotes.get(ticker, {}).get("marketCap") for ticker in sector["members"]}
+        if floor and any(caps.values()):
+            sector = {**sector, "members": [ticker for ticker, cap in caps.items() if (cap or 0) >= floor]}
+        out[key] = sector
+    return out
+
+
 def market_regime(index_snapshots: dict[str, dict], macro: dict[str, dict]) -> dict[str, Any]:
     core = [index_snapshots[ticker]["trend"] for ticker in ("SPY", "QQQ", "DIA", "IWM") if ticker in index_snapshots]
     bullish, bearish = core.count("bullish"), core.count("bearish")
@@ -576,16 +588,17 @@ def run_scan(
 
     indices = {symbol: {"name": name, **snapshots[symbol]} for symbol, name in config["indices"].items() if symbol in snapshots}
     mag7 = {symbol: snapshots[symbol] for symbol in config["magnificent_seven"] if symbol in snapshots}
-    sectors = rank_sectors(
-        config["sectors"], snapshots, settings.get("leaders_per_sector", 1), sector_days=sector_days, leader_days=leader_days, strength=config.get("strength")
-    )
-
     quote_symbols = list(dict.fromkeys([t for t in tickers if not t.startswith("^")] + config["large_cap_earnings"].get("extra_tickers", [])))
     quotes: dict[str, dict] = {}
     try:
         quotes = client.quotes(quote_symbols)
     except Exception as exc:
         warnings.append(f"quote batch unavailable: {type(exc).__name__}: {exc}")
+    config = {**config, "sectors": filter_sectors_by_cap(config["sectors"], quotes)}
+    sectors = rank_sectors(
+        config["sectors"], snapshots, settings.get("leaders_per_sector", 1), sector_days=sector_days, leader_days=leader_days, strength=config.get("strength")
+    )
+
 
     cache = ChainCache(client, now_epoch)
     events: dict[str, Any] = {"status": "skipped"}

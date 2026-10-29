@@ -14,6 +14,7 @@ from moki_signal.market_scan import (  # noqa: E402
     build_macro_events,
     classify_trend,
     earnings_session,
+    filter_sectors_by_cap,
     gex_change,
     is_strong,
     macro_snapshot,
@@ -170,3 +171,11 @@ class StrengthAndEventTests(unittest.TestCase):
         self.assertEqual(list(config["indices"]), ["SPY", "SOXX"])
         self.assertEqual(len(config["events"]["macro"]), 1)
         self.assertEqual(config["strength"]["min_days_above_sma5"], 3)
+
+    def test_sector_market_cap_floor(self) -> None:
+        sectors = {"big": {"members": ["A", "B", "C"], "min_market_cap": 3e11}, "any": {"members": ["A", "B"], "min_market_cap": 0}}
+        quotes = {"A": {"marketCap": 5e11}, "B": {"marketCap": 1e11}}
+        filtered = filter_sectors_by_cap(sectors, quotes)
+        self.assertEqual(filtered["big"]["members"], ["A"])
+        self.assertEqual(filtered["any"]["members"], ["A", "B"])
+        self.assertEqual(filter_sectors_by_cap(sectors, {})["big"]["members"], ["A", "B", "C"])

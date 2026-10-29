@@ -27,7 +27,12 @@ def normalize_universe(raw: dict[str, Any], holdings: list[dict[str, Any]] | Non
         macro[item["symbol"]] = {"name": item.get("label", item["symbol"]), "unit": "yield" if item.get("change_mode") == "basis-points" else "usd"}
     indices = {item["symbol"]: item.get("label", item["symbol"]) for item in raw.get("indices", []) + raw.get("market_lenses", [])}
     sectors = {
-        item["id"]: {"name": item.get("label", item["id"]), "etf": item.get("etf"), "members": list(item.get("symbols", []))}
+        item["id"]: {
+            "name": item.get("label", item["id"]),
+            "etf": item.get("etf"),
+            "members": list(item.get("symbols", [])),
+            "min_market_cap": float(item.get("minimum_market_cap_usd", 0)),
+        }
         for item in raw.get("sectors", [])
     }
     impact_map = {

@@ -511,6 +511,20 @@
   },
   "sectors": [
     {
+      "id": "mag7",
+      "label": "七巨头",
+      "etf": null,
+      "symbols": [
+        "AAPL",
+        "MSFT",
+        "GOOGL",
+        "AMZN",
+        "META",
+        "NVDA",
+        "TSLA"
+      ]
+    },
+    {
       "id": "storage",
       "label": "存储",
       "etf": null,
@@ -532,7 +546,55 @@
         "CIEN",
         "FN",
         "AAOI",
-        "CRDO"
+        "CRDO",
+        "ANET"
+      ]
+    },
+    {
+      "id": "servers",
+      "label": "服务器",
+      "etf": null,
+      "symbols": [
+        "DELL",
+        "HPE",
+        "SMCI",
+        "IBM",
+        "NTNX"
+      ]
+    },
+    {
+      "id": "chips",
+      "label": "芯片",
+      "etf": "SMH",
+      "symbols": [
+        "NVDA",
+        "AVGO",
+        "AMD",
+        "TSM",
+        "INTC",
+        "QCOM",
+        "TXN",
+        "MRVL",
+        "ARM",
+        "ADI",
+        "ON",
+        "NXPI",
+        "MPWR"
+      ]
+    },
+    {
+      "id": "datacenter",
+      "label": "算力中心",
+      "etf": null,
+      "symbols": [
+        "VRT",
+        "GEV",
+        "ETN",
+        "PWR",
+        "CEG",
+        "VST",
+        "EQIX",
+        "DLR"
       ]
     },
     {
@@ -559,20 +621,12 @@
         "CRM",
         "ADBE",
         "INTU",
-        "PLTR"
-      ]
-    },
-    {
-      "id": "cybersecurity",
-      "label": "网络安全",
-      "etf": "CIBR",
-      "symbols": [
+        "PLTR",
         "CRWD",
         "PANW",
-        "ZS",
-        "FTNT",
         "NET",
-        "OKTA"
+        "ZS",
+        "SNOW"
       ]
     },
     {
@@ -585,76 +639,85 @@
         "COP",
         "EOG",
         "SLB",
-        "FSLR"
+        "OXY"
       ]
     },
     {
-      "id": "chips",
-      "label": "芯片",
-      "etf": "SMH",
+      "id": "biotech",
+      "label": "生物科技",
+      "etf": "IBB",
       "symbols": [
-        "NVDA",
-        "AVGO",
-        "AMD",
-        "TSM",
-        "INTC",
-        "QCOM",
-        "TXN",
-        "MRVL",
-        "ARM"
+        "AMGN",
+        "GILD",
+        "VRTX",
+        "REGN",
+        "ALNY",
+        "BIIB",
+        "MRNA"
       ]
     },
     {
-      "id": "servers",
-      "label": "服务器",
-      "etf": null,
+      "id": "healthcare",
+      "label": "医疗",
+      "etf": "XLV",
       "symbols": [
-        "DELL",
-        "HPE",
-        "SMCI",
-        "IBM",
-        "NTNX"
+        "LLY",
+        "UNH",
+        "JNJ",
+        "ABBV",
+        "MRK",
+        "PFE",
+        "TMO",
+        "ABT",
+        "ISRG",
+        "NVO"
       ]
     },
     {
-      "id": "power-semi",
-      "label": "功率半导体",
-      "etf": null,
-      "symbols": [
-        "ON",
-        "NXPI",
-        "STM",
-        "MPWR",
-        "POWI",
-        "TXN"
-      ]
-    },
-    {
-      "id": "datacenter",
-      "label": "算力中心",
-      "etf": null,
-      "symbols": [
-        "VRT",
-        "GEV",
-        "ETN",
-        "PWR",
-        "CEG",
-        "VST",
-        "EQIX",
-        "DLR"
-      ]
-    },
-    {
-      "id": "gold-mining",
-      "label": "黄金矿业",
+      "id": "precious-metals",
+      "label": "贵金属",
       "etf": "GDX",
       "symbols": [
         "NEM",
-        "GOLD",
         "AEM",
         "WPM",
+        "FNV",
         "KGC",
-        "FNV"
+        "PAAS",
+        "GLD",
+        "SLV"
+      ]
+    },
+    {
+      "id": "financials",
+      "label": "金融&银行",
+      "etf": "XLF",
+      "symbols": [
+        "JPM",
+        "BAC",
+        "WFC",
+        "GS",
+        "MS",
+        "C",
+        "SCHW",
+        "BLK",
+        "V",
+        "MA",
+        "AXP"
+      ]
+    },
+    {
+      "id": "drones",
+      "label": "无人机",
+      "etf": null,
+      "symbols": [
+        "AVAV",
+        "KTOS",
+        "RCAT",
+        "ONDS",
+        "JOBY",
+        "ACHR",
+        "EH"
       ]
     },
     {
@@ -672,18 +735,35 @@
       ]
     },
     {
-      "id": "drones",
-      "label": "无人机",
+      "id": "traditional",
+      "label": "综合传统行业",
       "etf": null,
       "symbols": [
-        "AVAV",
-        "KTOS",
-        "RCAT",
-        "ONDS",
-        "JOBY",
-        "ACHR",
-        "EH"
-      ]
+        "WMT",
+        "COST",
+        "HD",
+        "LOW",
+        "PG",
+        "KO",
+        "PEP",
+        "PM",
+        "MCD",
+        "NKE",
+        "DIS",
+        "NFLX",
+        "BRK-B",
+        "PGR",
+        "CB",
+        "UPS",
+        "UNP",
+        "CAT",
+        "GE",
+        "HON",
+        "TMUS",
+        "VZ",
+        "T"
+      ],
+      "minimum_market_cap_usd": 300000000000
     }
   ],
   "strength": {
