@@ -37,7 +37,18 @@ Read `market-scan.md` and present it as compact Markdown tables in this order: i
 - Option-volume anomalies need three prior daily snapshots and a 2x median threshold; report `building-baseline` until then.
 - GEX is a Yahoo-chain/Black-Scholes estimate, not dealer inventory. Investor days come only from `events.manual` or explicit web research.
 - Playbooks: bullish → buy-call / cash-secured-put (+ covered-call if long ≥100 shares); bearish → buy-put / cheaper OTM put, never naked calls; range → no directional trade, covered-call or CSP.
+- Pass `--profile configs/options_agent_profile.json` so symbols with ≥100 shares also get covered-call legs.
 - Flag contracts marked thin and any earnings before expiry. Use `--skip-options` only when the user wants the index/sector tape alone. This scan is not investment advice and places no orders.
+
+## Options decision agent
+
+For holdings / watchlist option decisions, follow [references/mcmillan-options-agent-playbook.md](references/mcmillan-options-agent-playbook.md) and run:
+
+```powershell
+python scripts/options_decision_agent.py --profile configs/options_agent_profile.json --output-dir C:\absolute\workspace\outputs\options-agent
+```
+
+If the profile is missing, copy `configs/options_agent_profile.example.json` and ask the user to fill in account size, symbols, and shares. Report trend (SMA 20/50/200), GEX walls as context only, cash-secured-put candidates with contracts and cash reserved within the per-trade limit, 60%/80% take-profit buybacks, and the Δ0.35 roll / Δ0.40 defense / Δ0.50 assignment-review stock prices. Never suggest short puts in a clear bearish trend or naked short calls.
 
 ## Boundaries
 

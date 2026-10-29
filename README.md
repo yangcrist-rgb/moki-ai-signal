@@ -105,8 +105,8 @@ MOKI 会调用仓库自带的 `scripts/bootstrap_signal.py`。因此新用户只
 2. WTI 原油、10 年与 30 年美债收益率（收益率变化以 bp 计）；
 3. 当日及前一交易日盘后的大市值（≥3000 亿美元）财报：时段、状态、Yahoo 远期/TTM EPS、平值跨式隐含波动、影响主题与联动标的（`large_cap_earnings.impact_map`）；
 4. 未来 30 日财报及 `events.manual` 中手动维护的投资者日；
-5. 13 个板块的 20 日排名与广度（有 ETF 用 ETF，否则成分股等权），每个板块近 5 日领先股；
-6. 重点名单及板块内市值大于 200 亿美元个股的近端（≤30 DTE）期权成交量异动与估算 GEX 墙；
+5. 13 个板块的 20 日排名与广度（有 ETF 用 ETF，否则成分股等权），每个板块近 5 日领先的 2 只股票（天数和数量见 `lookbacks`）；
+6. `options_monitor.symbols` 重点名单及板块内市值大于 200 亿美元个股的近端（≤30 DTE）期权成交量异动与估算 GEX 墙；
 7. 20 日最强 5 个板块的领先股：正股价位计划，以及激进 / 保守期权策略。
 
 ```powershell
@@ -119,13 +119,32 @@ python scripts\us_market_indicator.py --universe .\configs\us_market_universe.js
 
 | 趋势 | 激进 | 保守 |
 | --- | --- | --- |
-| 多头 | 买平值 Call（Delta≈0.50，21–45 DTE） | 现金担保卖 Put（Delta≈0.30）；持股≥100 股时加 Covered Call |
+| 多头 | 买平值 Call（Delta≈0.50，21–45 DTE） | 现金担保卖 Put（25–45 DTE，|Delta| 0.18–0.35，目标 0.30）；持股≥100 股时加 Covered Call |
 | 空头 | 买平值 Put | 买更便宜的虚值 Put（Delta≈0.25）；不卖裸 Call |
 | 震荡 | 不做方向单 | 持股时 Covered Call，否则现金担保卖 Put |
 
-到期日在窗口内取总持仓量最大的一档；合约需满足 OI 与买卖价差过滤，放宽过滤后选中的合约标记为流动性偏薄。卖 Put 同时给出 Put Delta 到 0.30/0.35/0.40/0.50 时的正股"滚动线"；到期前有财报的合约会单独标注。持仓在配置的 `holdings` 中填写 `{"ticker": "AAPL", "shares": 200}`。
+到期日在窗口内取总持仓量最大的一档；合约需满足 OI 与买卖价差过滤，放宽过滤后选中的合约标记为流动性偏薄。卖 Put 同时给出 Put Delta 到 0.30/0.35/0.40/0.50 时的正股"滚动线"；到期前有财报的合约会单独标注。加 `--profile configs\options_agent_profile.json` 时，档案中持股≥100 的标的会额外生成 Covered Call。
 
 成交量异动需至少 3 个历史日快照（存于缓存目录），超过中位数 2 倍才判定，否则显示 `building-baseline`。GEX 基于 Yahoo 期权链与 Black-Scholes 估算，按"做市商多 Call、空 Put"的公开惯例计算，不代表真实持仓。期权链总是实时快照，`--as-of` 只影响日线。
+
+## 期权辅助决策 Agent（McMillan 风格）
+
+`scripts/options_decision_agent.py` 面向持仓与观察池，规则见 [`references/mcmillan-options-agent-playbook.md`](references/mcmillan-options-agent-playbook.md)。先复制并修改档案（`configs/options_agent_profile.json` 已被 git 忽略）：
+
+```powershell
+copy .\configs\options_agent_profile.example.json .\configs\options_agent_profile.json
+python scripts\options_decision_agent.py --profile .\configs\options_agent_profile.json --output-dir .\outputs\options-agent
+```
+
+每个标的输出：
+
+- 正股趋势：收盘价与 SMA20/50/200 排列，分为 bullish / bearish / transition；明确空头时不卖 Put；
+- 近端 GEX：Put 墙、Call 墙、正负 Gamma 聚集行权价，只作背景参考；
+- 现金担保卖 Put 候选：`sell_put_min_dte`–`sell_put_max_dte`、`target_delta_low`–`target_delta_high`、`min_open_interest` 与价差过滤，按全额行权现金计算张数，不超过 `per_trade_cash_limit_usd`（未设置时为 `account_size_usd × default_per_trade_cash_pct`）；
+- 管理价位：60% / 80% 止盈回补价；Put Delta 到 0.30 观察、0.35 向下向后滚动、0.40 必须防守、0.50 接股复核时对应的正股价；
+- `shares` ≥ 100 时给出 Covered Call 候选；到期前有财报的合约会标注。
+
+结果写入 `<output-dir>/<档案名>-<日期>.md` 与 `.json`。
 
 ## 策略与数据边界
 
@@ -149,7 +168,9 @@ scripts/bootstrap_signal.py      # 跨工具首次运行与隔离依赖入口
 scripts/run_signal.py            # 已配置 Python 环境的底层入口
 scripts/moki_signal/             # 数据、策略、渲染和输出流水线
 scripts/us_market_indicator.py   # 美股指标与期权策略扫描入口
+scripts/options_decision_agent.py # 持仓/观察池期权辅助决策
 configs/us_market_universe.json  # 扫描用指数、板块、期权与事件配置
+configs/options_agent_profile.example.json # 期权档案示例
 tests/                           # 离线数据解析、核对与扫描规则测试
 ```
 
