@@ -97,6 +97,63 @@ MOKI 会调用仓库自带的 `scripts/bootstrap_signal.py`。因此新用户只
 - 不支持 Agent Skills 的工具：把仓库作为项目打开，让 Agent 遵循根目录的 `SKILL.md`，或直接运行 `scripts/bootstrap_signal.py`。
 - 工具必须能够执行本地 Python 并允许首次运行下载锁定依赖。仅能聊天、不能执行本地命令的软件无法生成文件。
 
+## 美股指标扫描（7 步流程）
+
+`scripts/us_market_indicator.py` 是独立于信号图的市场扫描，不下单，按 `configs/us_market_universe.json` 依次输出：
+
+1. **宏观环境**：10 年 / 30 年美债收益率（变化以 bp 计）与 WTI 原油，及是否构成逆风；
+2. **大盘**：SPY / QQQ / DIA 三大指数 + SOXX / IGV 的 1/5/20 日涨跌、5/10/20/30/50/100 日均线位置与趋势，并给出市场状态；
+3. **重大事件与大市值财报**：`events.macro` 中的 FOMC / 会议纪要 / CPI / 非农（近 3 日与未来 30 日），当日及前一交易日盘后 ≥3000 亿美元财报（EPS、平值跨式隐含波动、影响主题与联动标的），未来 30 日财报与投资者日；
+4. **细分板块与强势股**：16 个板块（七巨头、存储、光通信、服务器、芯片、算力中心、半导体设备、软件、能源、生物科技、医疗、贵金属、金融&银行、无人机、航天、综合传统行业；板块可设 `minimum_market_cap_usd`，综合传统行业只保留 ≥3000 亿美元市值）的 20 日排名与广度，强势股＝必要条件（连续 ≥2 日站稳 5 日线、收盘 > SMA20、5 日涨幅为正）＋加分项得分 ≥2 且至少一项均线结构：EMA5>EMA10>EMA20、SMA20>SMA50、近 10 日放量大涨（涨幅 ≥3%、量 ≥20 日均量 1.5 倍）、近 7 日利好新闻（Yahoo 新闻标题关键词与目标价方向，利空扣分）。只有放量或利好、结构未修复的列为“潜在转强”（阈值见 `strength`）；
+5. **分板块期权异动与 GEX 异动**：近端（≤30 DTE）成交量相对历史中位数 ≥2 倍判为放量；GEX 与上一快照比较，Gamma 翻转、墙位移动 ≥3% 现价或净 GEX 变化 ≥50% 判为异动；
+6. **期权策略**：前 5 板块的强势股及强势异动股的正股价位计划与激进 / 保守期权策略；
+7. **持仓检查**：默认读取 `configs/options_agent_profile.json`，嵌入期权辅助决策 Agent 的持仓管理、Greeks 与卖 Put 候选（`--skip-holdings` 跳过）。
+
+```powershell
+python scripts\us_market_indicator.py --universe .\configs\us_market_universe.json --output-dir .\outputs\market-indicator
+```
+
+结果写入 `outputs/market-indicator/<数据截止日>/market-scan.md` 与 `market-scan.json`。只看指数/板块时加 `--skip-options`，不查询事件时加 `--skip-events`。
+
+期权策略规则：
+
+| 趋势 | 激进 | 保守 |
+| --- | --- | --- |
+| 多头 | 买平值 Call（Delta≈0.50，21–45 DTE） | 现金担保卖 Put（25–45 DTE，|Delta| 0.18–0.35，目标 0.30）；持股≥100 股时加 Covered Call |
+| 空头 | 买平值 Put | 买更便宜的虚值 Put（Delta≈0.25）；不卖裸 Call |
+| 震荡 | 不做方向单 | 持股时 Covered Call，否则现金担保卖 Put |
+
+到期日在窗口内取总持仓量最大的一档；合约需满足 OI 与买卖价差过滤，放宽过滤后选中的合约标记为流动性偏薄。卖 Put 同时给出 Put Delta 到 0.30/0.35/0.40/0.50 时的正股"滚动线"；到期前有财报的合约会单独标注。加 `--profile configs\options_agent_profile.json` 时，档案中持股≥100 的标的会额外生成 Covered Call。
+
+成交量异动需至少 3 个历史日快照（存于缓存目录），超过中位数 2 倍才判定，否则显示“积累基线”。非常规交易时段 Yahoo 会清零期权链的 OI、报价与 IV，报告会提示 GEX 与策略需在美股常规时段（ET 09:30–16:00）重跑，且不会用这类快照覆盖 GEX 历史；持仓 Greeks 改用最新成交价反推 IV。GEX 基于 Yahoo 期权链与 Black-Scholes 估算，按"做市商多 Call、空 Put"的公开惯例计算，不代表真实持仓。期权链总是实时快照，`--as-of` 只影响日线。
+
+## 期权辅助决策 Agent（McMillan 风格）
+
+`scripts/options_decision_agent.py` 面向持仓与观察池，规则见 [`references/mcmillan-options-agent-playbook.md`](references/mcmillan-options-agent-playbook.md)。先复制并修改档案（`configs/options_agent_profile.json` 已被 git 忽略）：
+
+```powershell
+copy .\configs\options_agent_profile.example.json .\configs\options_agent_profile.json
+python scripts\options_decision_agent.py --profile .\configs\options_agent_profile.json --output-dir .\outputs\options-agent
+```
+
+每个标的输出：
+
+- 正股趋势：收盘价与 SMA20/50/200 排列，分为 bullish / bearish / transition；明确空头时不卖 Put；
+- 近端 GEX：Put 墙、Call 墙、正负 Gamma 聚集行权价，只作背景参考；
+- 现金担保卖 Put 候选：`sell_put_min_dte`–`sell_put_max_dte`、`target_delta_low`–`target_delta_high`、`min_open_interest` 与价差过滤，按全额行权现金计算张数，不超过 `per_trade_cash_limit_usd`（未设置时为 `account_size_usd × default_per_trade_cash_pct`）；
+- 管理价位：60% / 80% 止盈回补价；Put Delta 到 0.30 观察、0.35 向下向后滚动、0.40 必须防守、0.50 接股复核时对应的正股价；
+- `shares` ≥ 100 时给出 Covered Call 候选；到期前有财报的合约会标注。
+
+档案还可记录现金与已有期权仓位，Agent 会输出账户概览（权益、现金占比、未实现盈亏、每日 Theta、各标的 Delta 美元敞口）和逐笔管理提示（≤90/≤60 天滚动、盈利 50%/100% 止盈、亏损 50% 复核、趋势相反、到期前财报）。盘前/盘后时段会按扩展时段价格估算期权盈亏，卖 Put 占用现金不超过 `cash_usd`：
+
+```json
+"cash_usd": 13109.25,
+"symbols": [{"symbol": "CRDO", "role": "holding", "shares": 100, "cost_basis": 171.5}],
+"option_positions": [{"symbol": "AMD", "type": "call", "expiry": "2027-01-15", "strike": 600, "contracts": 1, "cost": 48.78}]
+```
+
+结果写入 `<output-dir>/<档案名>-<日期>.md` 与 `.json`。
+
 ## 策略与数据边界
 
 - 主数据：通过 Yahoo Finance chart 接口获取美股日线 OHLCV；代码版本 1 仅支持美国股票日线。
@@ -118,7 +175,11 @@ references/                      # 数据、策略与品牌契约
 scripts/bootstrap_signal.py      # 跨工具首次运行与隔离依赖入口
 scripts/run_signal.py            # 已配置 Python 环境的底层入口
 scripts/moki_signal/             # 数据、策略、渲染和输出流水线
-tests/                           # 离线数据解析与核对测试
+scripts/us_market_indicator.py   # 美股指标与期权策略扫描入口
+scripts/options_decision_agent.py # 持仓/观察池期权辅助决策
+configs/us_market_universe.json  # 扫描用指数、板块、期权与事件配置
+configs/options_agent_profile.example.json # 期权档案示例
+tests/                           # 离线数据解析、核对与扫描规则测试
 ```
 
 如果提供正式透明横版标识，将其命名为 `assets/brand/moki-logo-horizontal.png`。渲染器会自动优先使用该文件；否则会从已提供的 MOKI 品牌板提取同一锁定组合。
