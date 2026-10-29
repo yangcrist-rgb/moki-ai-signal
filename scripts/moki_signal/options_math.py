@@ -52,6 +52,26 @@ def bs_gamma(spot: float, strike: float, years: float, rate: float, iv: float) -
     return _NORMAL.pdf(_d1(spot, strike, years, rate, iv)) / (spot * iv * math.sqrt(years))
 
 
+def bs_price(kind: str, spot: float, strike: float, years: float, rate: float, iv: float) -> float:
+    years = max(years, 1 / 365)
+    d1 = _d1(spot, strike, years, rate, iv)
+    d2 = d1 - iv * math.sqrt(years)
+    discount = strike * math.exp(-rate * years)
+    if kind == "call":
+        return spot * _NORMAL.cdf(d1) - discount * _NORMAL.cdf(d2)
+    return discount * _NORMAL.cdf(-d2) - spot * _NORMAL.cdf(-d1)
+
+
+def bs_theta_per_day(kind: str, spot: float, strike: float, years: float, rate: float, iv: float) -> float:
+    years = max(years, 1 / 365)
+    d1 = _d1(spot, strike, years, rate, iv)
+    d2 = d1 - iv * math.sqrt(years)
+    decay = -spot * _NORMAL.pdf(d1) * iv / (2 * math.sqrt(years))
+    carry = rate * strike * math.exp(-rate * years)
+    annual = decay - carry * _NORMAL.cdf(d2) if kind == "call" else decay + carry * _NORMAL.cdf(-d2)
+    return annual / 365
+
+
 def spot_for_put_delta(strike: float, years: float, rate: float, iv: float, target_abs_delta: float) -> float:
     """Underlying price at which a put's Black-Scholes delta reaches -target_abs_delta."""
     years = max(years, 1 / 365)

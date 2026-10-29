@@ -11,7 +11,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from moki_signal.options_agent import cash_limit, csp_candidate, long_term_trend  # noqa: E402
+from moki_signal.options_agent import cash_limit, csp_candidate, extended_hours, long_call_signals, long_term_trend, portfolio_summary  # noqa: E402
 from moki_signal.options_math import Contract, bs_delta, pick_by_delta  # noqa: E402
 from moki_signal.universe import holdings_from_profile, load_universe  # noqa: E402
 
@@ -51,6 +51,34 @@ class AgentRuleTests(unittest.TestCase):
         profile = {"account_size_usd": 30000, "risk": {"default_per_trade_cash_pct": 0.12}}
         self.assertEqual(cash_limit(profile, {"per_trade_cash_limit_usd": 12000}), 12000)
         self.assertAlmostEqual(cash_limit(profile, {}), 3600)
+
+    def test_cash_limit_capped_by_cash_held(self) -> None:
+        self.assertEqual(cash_limit({"cash_usd": 13109.25}, {}), 13109.25)
+        self.assertEqual(cash_limit({"cash_usd": 5000, "account_size_usd": 100000, "risk": {"default_per_trade_cash_pct": 0.12}}, {}), 5000)
+
+    def test_extended_hours_uses_post_market_overnight(self) -> None:
+        quote = {"marketState": "PREPRE", "postMarketPrice": 292.5, "postMarketChangePercent": -9.97, "preMarketPrice": None}
+        self.assertEqual(extended_hours(quote), {"session": "post-market", "price": 292.5, "change_pct": -9.97})
+        self.assertEqual(extended_hours({"marketState": "PRE", "preMarketPrice": 101.0, "preMarketChangePercent": 1.0, "postMarketPrice": 99.0})["session"], "pre-market")
+        self.assertIsNone(extended_hours({"marketState": "REGULAR", "postMarketPrice": 99.0}))
+
+    def test_long_call_signals_prefer_extended_estimate(self) -> None:
+        position = {"type": "call", "dte": 450, "pnl_pct": -26.8, "delta": 0.62, "extended_estimate": {"pnl_pct": -50.8}}
+        signals = long_call_signals(position, "bearish")
+        self.assertTrue(any("亏损 ≥50%" in item for item in signals))
+        self.assertTrue(any("明确空头" in item for item in signals))
+        self.assertTrue(any("≤60 天" in item for item in long_call_signals({"type": "call", "dte": 40, "pnl_pct": 120, "delta": 0.8}, "bullish")))
+        self.assertTrue(any("利润翻倍" in item for item in long_call_signals({"type": "call", "dte": 200, "pnl_pct": 120, "delta": 0.8}, "bullish")))
+
+    def test_portfolio_summary_totals(self) -> None:
+        results = [
+            {"symbol": "CRDO", "stock_position": {"shares": 100, "cost_basis": 171.5, "value": 17369.0, "delta_dollars": 17369.0}, "option_positions": []},
+            {"symbol": "AMD", "stock_position": None, "option_positions": [{"status": "ok", "value": 5100.0, "cost_total": 4878.0, "theta_per_day_usd": -41.0, "delta_dollars": 29462.0}]},
+        ]
+        summary = portfolio_summary({"cash_usd": 13109.25}, results)
+        self.assertEqual(summary["equity"], round(13109.25 + 17369 + 5100, 2))
+        self.assertEqual(summary["unrealized_pnl"], round(17369 + 5100 - 17150 - 4878, 2))
+        self.assertEqual(summary["exposure"][0]["symbol"], "AMD")
 
     def test_csp_sizing_and_management_lines(self) -> None:
         put = Contract("XP90", "put", 90.0, 0, 30, 1.9, 2.1, 2.0, 10, 500, 0.4)
