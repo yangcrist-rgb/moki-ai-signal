@@ -97,17 +97,17 @@ MOKI 会调用仓库自带的 `scripts/bootstrap_signal.py`。因此新用户只
 - 不支持 Agent Skills 的工具：把仓库作为项目打开，让 Agent 遵循根目录的 `SKILL.md`，或直接运行 `scripts/bootstrap_signal.py`。
 - 工具必须能够执行本地 Python 并允许首次运行下载锁定依赖。仅能聊天、不能执行本地命令的软件无法生成文件。
 
-## 美股指标扫描（大盘 → 宏观 → 事件 → 板块 → 期权）
+## 美股指标扫描（7 步流程）
 
 `scripts/us_market_indicator.py` 是独立于信号图的市场扫描，不下单，按 `configs/us_market_universe.json` 依次输出：
 
-1. SPY / QQQ / DIA / IWM、SOX、IGV 与七巨头的 1/5/20 日涨跌、5/10/20/30/50/100 日均线位置和趋势（多头 / 空头 / 震荡）；
-2. WTI 原油、10 年与 30 年美债收益率（收益率变化以 bp 计）；
-3. 当日及前一交易日盘后的大市值（≥3000 亿美元）财报：时段、状态、Yahoo 远期/TTM EPS、平值跨式隐含波动、影响主题与联动标的（`large_cap_earnings.impact_map`）；
-4. 未来 30 日财报及 `events.manual` 中手动维护的投资者日；
-5. 13 个板块的 20 日排名与广度（有 ETF 用 ETF，否则成分股等权），每个板块近 5 日领先的 2 只股票（天数和数量见 `lookbacks`）；
-6. `options_monitor.symbols` 重点名单及板块内市值大于 200 亿美元个股的近端（≤30 DTE）期权成交量异动与估算 GEX 墙；
-7. 20 日最强 5 个板块的领先股：正股价位计划，以及激进 / 保守期权策略。
+1. **宏观环境**：10 年 / 30 年美债收益率（变化以 bp 计）与 WTI 原油，及是否构成逆风；
+2. **大盘**：SPY / QQQ / DIA 三大指数 + SOXX / IGV 的 1/5/20 日涨跌、5/10/20/30/50/100 日均线位置与趋势，并给出市场状态；
+3. **重大事件与大市值财报**：`events.macro` 中的 FOMC / 会议纪要 / CPI / 非农（近 3 日与未来 30 日），当日及前一交易日盘后 ≥3000 亿美元财报（EPS、平值跨式隐含波动、影响主题与联动标的），未来 30 日财报与投资者日；
+4. **细分板块与强势股**：13 个板块的 20 日排名与广度，强势股＝收盘 > SMA20 > SMA50、连续 ≥2 日站稳 5 日线且 5 日涨幅为正（阈值见 `strength`）；
+5. **分板块期权异动与 GEX 异动**：近端（≤30 DTE）成交量相对历史中位数 ≥2 倍判为放量；GEX 与上一快照比较，Gamma 翻转、墙位移动 ≥3% 现价或净 GEX 变化 ≥50% 判为异动；
+6. **期权策略**：前 5 板块的强势股及强势异动股的正股价位计划与激进 / 保守期权策略；
+7. **持仓检查**：默认读取 `configs/options_agent_profile.json`，嵌入期权辅助决策 Agent 的持仓管理、Greeks 与卖 Put 候选（`--skip-holdings` 跳过）。
 
 ```powershell
 python scripts\us_market_indicator.py --universe .\configs\us_market_universe.json --output-dir .\outputs\market-indicator
@@ -125,7 +125,7 @@ python scripts\us_market_indicator.py --universe .\configs\us_market_universe.js
 
 到期日在窗口内取总持仓量最大的一档；合约需满足 OI 与买卖价差过滤，放宽过滤后选中的合约标记为流动性偏薄。卖 Put 同时给出 Put Delta 到 0.30/0.35/0.40/0.50 时的正股"滚动线"；到期前有财报的合约会单独标注。加 `--profile configs\options_agent_profile.json` 时，档案中持股≥100 的标的会额外生成 Covered Call。
 
-成交量异动需至少 3 个历史日快照（存于缓存目录），超过中位数 2 倍才判定，否则显示 `building-baseline`。GEX 基于 Yahoo 期权链与 Black-Scholes 估算，按"做市商多 Call、空 Put"的公开惯例计算，不代表真实持仓。期权链总是实时快照，`--as-of` 只影响日线。
+成交量异动需至少 3 个历史日快照（存于缓存目录），超过中位数 2 倍才判定，否则显示“积累基线”。非常规交易时段 Yahoo 会清零期权链的 OI、报价与 IV，报告会提示 GEX 与策略需在美股常规时段（ET 09:30–16:00）重跑，且不会用这类快照覆盖 GEX 历史；持仓 Greeks 改用最新成交价反推 IV。GEX 基于 Yahoo 期权链与 Black-Scholes 估算，按"做市商多 Call、空 Put"的公开惯例计算，不代表真实持仓。期权链总是实时快照，`--as-of` 只影响日线。
 
 ## 期权辅助决策 Agent（McMillan 风格）
 
