@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "indices": {
+    "SPY": "S&P 500",
+    "QQQ": "Nasdaq-100",
+    "DIA": "Dow Jones",
+    "IWM": "Russell 2000",
+    "^SOX": "PHLX Semiconductor",
+    "IGV": "Software ETF"
+  },
+  "magnificent_seven": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA"],
+  "macro": {
+    "CL=F": {"name": "WTI crude", "unit": "usd"},
+    "^TNX": {"name": "US 10Y yield", "unit": "yield"},
+    "^TYX": {"name": "US 30Y yield", "unit": "yield"}
+  },
+  "risk_free_symbol": "^IRX",
+  "sma_windows": [5, 10, 20, 30, 50, 100],
+  "sectors": {
+    "storage": {"name": "存储", "etf": null, "members": ["MU", "WDC", "STX", "SNDK", "NTAP"]},
+    "optical": {"name": "光通信", "etf": null, "members": ["COHR", "LITE", "CIEN", "FN", "AAOI", "CRDO"]},
+    "semi_equipment": {"name": "半导体设备", "etf": null, "members": ["AMAT", "LRCX", "KLAC", "ASML", "TER", "ONTO"]},
+    "software": {"name": "软件", "etf": "IGV", "members": ["MSFT", "ORCL", "CRM", "NOW", "ADBE", "PLTR", "INTU"]},
+    "cyber": {"name": "网络安全", "etf": "CIBR", "members": ["CRWD", "PANW", "FTNT", "ZS", "NET", "OKTA"]},
+    "energy": {"name": "能源", "etf": "XLE", "members": ["XOM", "CVX", "COP", "EOG", "SLB", "OXY"]},
+    "chips": {"name": "芯片", "etf": "SMH", "members": ["NVDA", "AMD", "AVGO", "TSM", "MRVL", "QCOM", "ARM"]},
+    "servers": {"name": "服务器", "etf": null, "members": ["SMCI", "DELL", "HPE", "CLS", "JBL"]},
+    "power_semis": {"name": "功率半导体", "etf": null, "members": ["ON", "MPWR", "NXPI", "ADI", "TXN", "AOSL"]},
+    "datacenter": {"name": "数据中心", "etf": null, "members": ["VRT", "ETN", "GEV", "EQIX", "DLR", "VST", "CEG"]},
+    "gold_mining": {"name": "金矿", "etf": "GDX", "members": ["NEM", "AEM", "B", "KGC", "WPM", "FNV"]},
+    "space": {"name": "太空", "etf": "UFO", "members": ["RKLB", "ASTS", "LUNR", "PL", "RDW"]},
+    "drones": {"name": "无人机", "etf": null, "members": ["AVAV", "KTOS", "ONDS", "RCAT", "UMAC"]}
+  },
+  "options": {
+    "focus": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "AMD", "TSM", "MU", "PLTR"],
+    "watchlist_min_market_cap": 20000000000,
+    "near_term_max_dte": 30,
+    "near_term_max_expirations": 3,
+    "anomaly_multiple": 2.0,
+    "anomaly_min_baseline_days": 3,
+    "playbook_top_sectors": 5,
+    "leaders_per_sector": 2,
+    "aggressive": {"min_dte": 21, "max_dte": 45, "target_dte": 30, "target_abs_delta": 0.5},
+    "conservative": {"min_dte": 21, "max_dte": 45, "target_dte": 35, "csp_abs_delta": 0.3, "otm_put_abs_delta": 0.25, "covered_call_abs_delta": 0.25},
+    "roll_deltas": [0.30, 0.35, 0.40, 0.50],
+    "min_open_interest": 100,
+    "max_spread_pct": 0.25
+  },
+  "holdings": [],
+  "large_cap_earnings": {
+    "min_market_cap": 300000000000,
+    "impact_map": {
+      "NVDA": {"theme": "AI 算力资本开支", "linked": ["AMD", "AVGO", "TSM", "MU", "SMCI", "DELL", "VRT", "COHR"]},
+      "MSFT": {"theme": "云与企业软件 / AI capex", "linked": ["IGV", "ORCL", "NOW", "NVDA", "VRT", "CEG"]},
+      "GOOGL": {"theme": "搜索广告 / 云 / TPU capex", "linked": ["META", "AVGO", "TSM", "COHR", "VRT"]},
+      "META": {"theme": "数字广告 / AI capex", "linked": ["GOOGL", "NVDA", "AVGO", "ANET", "VRT"]},
+      "AMZN": {"theme": "电商消费 / AWS / capex", "linked": ["MSFT", "GOOGL", "NVDA", "MRVL", "VRT"]},
+      "AAPL": {"theme": "消费电子供应链", "linked": ["QCOM", "AVGO", "TSM", "SWKS", "MU"]},
+      "TSLA": {"theme": "电动车 / 自动驾驶", "linked": ["ON", "NXPI", "RIVN"]},
+      "AVGO": {"theme": "定制 ASIC / 网络", "linked": ["MRVL", "NVDA", "COHR", "LITE", "CRDO"]},
+      "TSM": {"theme": "先进制程与半导体周期", "linked": ["NVDA", "AMD", "AVGO", "ASML", "AMAT", "LRCX", "KLAC"]},
+      "ORCL": {"theme": "AI 云基础设施", "linked": ["NVDA", "VRT", "CEG", "IGV"]},
+      "LLY": {"theme": "医药 / GLP-1", "linked": ["NVO", "XLV"]},
+      "JPM": {"theme": "银行 / 信用周期", "linked": ["XLF", "BAC", "GS"]},
+      "XOM": {"theme": "原油与能源资本开支", "linked": ["XLE", "CVX", "SLB", "COP"]},
+      "ASML": {"theme": "半导体设备订单", "linked": ["AMAT", "LRCX", "KLAC", "TSM"]}
+    },
+    "extra_tickers": ["LLY", "JPM", "V", "MA", "WMT", "COST", "NFLX", "UNH", "JNJ", "BRK-B", "ORCL"]
+  },
+  "events": {
+    "manual": []
+  }
+}
