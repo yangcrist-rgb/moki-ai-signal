@@ -47,7 +47,7 @@ def classify_trend(close: float, sma: dict[int, float | None], sma20_slope: floa
     return "range"
 
 
-def trend_snapshot(frame: pd.DataFrame, windows: list[int]) -> dict[str, Any]:
+def trend_snapshot(frame: pd.DataFrame, windows: list[int], return_days: tuple[int, ...] = ()) -> dict[str, Any]:
     close = frame["Close"].astype(float).reset_index(drop=True)
     last = float(close.iloc[-1])
 
@@ -59,6 +59,7 @@ def trend_snapshot(frame: pd.DataFrame, windows: list[int]) -> dict[str, Any]:
     slope = None
     if len(close) >= 25 and not math.isnan(sma20_series.iloc[-6]):
         slope = float(sma20_series.iloc[-1] - sma20_series.iloc[-6])
+    extra = {f"ret_{days}d": _pct(last, back(days)) for days in return_days if days not in (1, 5, 20)}
     high_20 = float(frame["High"].tail(20).max()) if "High" in frame else None
     low_20 = float(frame["Low"].tail(20).min()) if "Low" in frame else None
     return {
@@ -67,6 +68,7 @@ def trend_snapshot(frame: pd.DataFrame, windows: list[int]) -> dict[str, Any]:
         "ret_1d": _pct(last, back(1)),
         "ret_5d": _pct(last, back(5)),
         "ret_20d": _pct(last, back(20)),
+        **extra,
         "sma": {str(window): value for window, value in sma.items()},
         "above_sma": {str(window): (value is not None and last > value) for window, value in sma.items()},
         "sma20_slope_5d": round(slope, 4) if slope is not None else None,
@@ -90,21 +92,24 @@ def macro_snapshot(frame: pd.DataFrame, unit: str) -> dict[str, Any]:
     return out
 
 
-def rank_sectors(sectors: dict[str, dict], snapshots: dict[str, dict], leaders_per_sector: int) -> list[dict[str, Any]]:
+def rank_sectors(
+    sectors: dict[str, dict], snapshots: dict[str, dict], leaders_per_sector: int, *, sector_days: int = 20, leader_days: int = 5
+) -> list[dict[str, Any]]:
+    sector_key, leader_key = f"ret_{sector_days}d", f"ret_{leader_days}d"
     ranked = []
     for key, sector in sectors.items():
         members = [ticker for ticker in sector["members"] if ticker in snapshots]
         if not members:
             continue
         etf = sector.get("etf")
-        if etf and etf in snapshots and snapshots[etf]["ret_20d"] is not None:
-            score, basis = snapshots[etf]["ret_20d"], f"{etf} 20d"
+        if etf and etf in snapshots and snapshots[etf].get(sector_key) is not None:
+            score, basis = snapshots[etf][sector_key], f"{etf} {sector_days}d"
         else:
-            values = [snapshots[ticker]["ret_20d"] for ticker in members if snapshots[ticker]["ret_20d"] is not None]
-            score, basis = (round(sum(values) / len(values), 2) if values else None), "equal-weight 20d"
+            values = [snapshots[ticker][sector_key] for ticker in members if snapshots[ticker].get(sector_key) is not None]
+            score, basis = (round(sum(values) / len(values), 2) if values else None), f"equal-weight {sector_days}d"
         above20 = sum(1 for ticker in members if snapshots[ticker]["above_sma"].get("20"))
         above50 = sum(1 for ticker in members if snapshots[ticker]["above_sma"].get("50"))
-        by_5d = sorted(members, key=lambda ticker: snapshots[ticker]["ret_5d"] if snapshots[ticker]["ret_5d"] is not None else -1e9, reverse=True)
+        by_5d = sorted(members, key=lambda ticker: snapshots[ticker][leader_key] if snapshots[ticker].get(leader_key) is not None else -1e9, reverse=True)
         ranked.append(
             {
                 "key": key,
@@ -114,7 +119,7 @@ def rank_sectors(sectors: dict[str, dict], snapshots: dict[str, dict], leaders_p
                 "breadth_above_sma20": round(above20 / len(members) * 100),
                 "breadth_above_sma50": round(above50 / len(members) * 100),
                 "members": [
-                    {"ticker": ticker, "ret_5d": snapshots[ticker]["ret_5d"], "ret_20d": snapshots[ticker]["ret_20d"], "trend": snapshots[ticker]["trend"]}
+                    {"ticker": ticker, "ret_leader": snapshots[ticker].get(leader_key), "ret_sector": snapshots[ticker].get(sector_key), "trend": snapshots[ticker]["trend"]}
                     for ticker in by_5d
                 ],
                 "leaders": by_5d[: max(1, leaders_per_sector)],
@@ -175,7 +180,8 @@ def build_earnings(
     impact_map = cfg.get("impact_map", {})
     start, end, today_label = earnings_window(as_of)
     today_rows, upcoming = [], []
-    horizon = now_epoch + 30 * 86400
+    lookahead = int(config.get("events", {}).get("lookahead_days", 30))
+    horizon = now_epoch + lookahead * 86400
     for ticker, quote in sorted(quotes.items()):
         timestamp = quote.get("earningsTimestamp") or quote.get("earningsTimestampStart")
         if not timestamp:
@@ -212,11 +218,11 @@ def build_earnings(
             event_day = pd.Timestamp(event["date"])
         except (KeyError, ValueError):
             continue
-        if as_of <= event_day <= as_of + pd.Timedelta(days=30):
+        if as_of <= event_day <= as_of + pd.Timedelta(days=lookahead):
             upcoming.append({"ticker": event.get("ticker"), "name": event.get("name", ""), "date": event_day.strftime("%Y-%m-%d"), "type": event.get("type", "investor-day"), "session": event.get("session", "")})
     upcoming.sort(key=lambda row: (row["date"], row.get("ticker") or ""))
     today_rows.sort(key=lambda row: -(row.get("market_cap_b") or 0))
-    return {"session_date": today_label, "today": today_rows, "next_30d": upcoming}
+    return {"session_date": today_label, "lookahead_days": lookahead, "today": today_rows, "next_30d": upcoming}
 
 
 class ChainCache:
@@ -277,6 +283,7 @@ def _load_volume_history(path: Path) -> dict[str, dict[str, dict]]:
 
 
 def near_term_options(cache: ChainCache, symbol: str, rate: float, settings: dict, history: dict, as_of_label: str) -> dict[str, Any]:
+    history_days = int(settings.get("history_days", 20))
     spot = cache.spot(symbol)
     if not spot:
         raise ValueError("no underlying price in option chain")
@@ -292,7 +299,7 @@ def near_term_options(cache: ChainCache, symbol: str, rate: float, settings: dic
     put_volume = sum(contract.volume for contract in contracts if contract.kind == "put")
     total = call_volume + put_volume
     ticker_history = history.setdefault(symbol, {})
-    prior = [entry["total"] for day, entry in sorted(ticker_history.items()) if day < as_of_label][-20:]
+    prior = [entry["total"] for day, entry in sorted(ticker_history.items()) if day < as_of_label][-history_days:]
     ticker_history[as_of_label] = {"total": total, "calls": call_volume, "puts": put_volume}
     anomaly = volume_anomaly(total, prior, minimum_days=settings["anomaly_min_baseline_days"], multiple=settings["anomaly_multiple"])
     return {
@@ -345,9 +352,10 @@ def build_playbook(
     expirations = cache.expirations(ticker)
 
     def choose(cfg: dict) -> int | None:
-        window = expirations_in_window(expirations, cache.now_epoch, min_dte=cfg["min_dte"], max_dte=cfg["max_dte"])
+        max_dte = min(cfg["max_dte"], settings.get("chain_max_dte", cfg["max_dte"]))
+        window = expirations_in_window(expirations, cache.now_epoch, min_dte=cfg["min_dte"], max_dte=max_dte)
         liquidity = {expiration: sum(contract.open_interest for contract in cache.contracts(ticker, expiration)) for expiration in window}
-        return pick_expiration(expirations, cache.now_epoch, min_dte=cfg["min_dte"], max_dte=cfg["max_dte"], target_dte=cfg["target_dte"], open_interest=liquidity)
+        return pick_expiration(expirations, cache.now_epoch, min_dte=cfg["min_dte"], max_dte=max_dte, target_dte=cfg["target_dte"], open_interest=liquidity)
 
     aggressive_exp, conservative_exp = choose(aggressive_cfg), choose(conservative_cfg)
     strict = {"min_open_interest": settings["min_open_interest"], "max_spread_pct": settings["max_spread_pct"]}
@@ -355,13 +363,15 @@ def build_playbook(
     shares = holdings.get(ticker, 0)
     thin: list[str] = []
 
-    def select(expiration: int | None, kind: str, target: float) -> tuple[Contract, float] | None:
+    csp_range = tuple(conservative_cfg.get("csp_delta_range", (0.18, 0.35)))
+
+    def select(expiration: int | None, kind: str, target: float, delta_range: tuple[float, float] | None = None) -> tuple[Contract, float] | None:
         if expiration is None:
             return None
         pool = [contract for contract in cache.contracts(ticker, expiration) if contract.kind == kind]
-        picked = pick_by_delta(pool, spot, rate, target, **strict)
+        picked = pick_by_delta(pool, spot, rate, target, delta_range=delta_range, **strict)
         if picked is None:
-            picked = pick_by_delta(pool, spot, rate, target, **relaxed)
+            picked = pick_by_delta(pool, spot, rate, target, delta_range=delta_range, **relaxed)
             if picked is not None:
                 thin.append(picked[0].symbol)
         return picked
@@ -373,7 +383,7 @@ def build_playbook(
         picked = select(aggressive_exp, "call", aggressive_cfg["target_abs_delta"])
         if picked:
             aggressive.append(_leg("buy-call", *picked, spot, rate))
-        picked = select(conservative_exp, "put", conservative_cfg["csp_abs_delta"])
+        picked = select(conservative_exp, "put", conservative_cfg["csp_abs_delta"], csp_range)
         if picked:
             conservative.append(_leg("cash-secured-put", *picked, spot, rate, settings["roll_deltas"]))
         if shares >= 100:
@@ -395,7 +405,7 @@ def build_playbook(
             if picked:
                 conservative.append(_leg("covered-call", *picked, spot, rate))
         else:
-            picked = select(conservative_exp, "put", conservative_cfg["csp_abs_delta"])
+            picked = select(conservative_exp, "put", conservative_cfg["csp_abs_delta"], csp_range)
             if picked:
                 conservative.append(_leg("cash-secured-put", *picked, spot, rate, settings["roll_deltas"]))
     for leg in aggressive + conservative:
@@ -447,12 +457,16 @@ def run_scan(
     client: YahooClient | None = None,
     skip_options: bool = False,
     skip_events: bool = False,
-    workers: int = 8,
+    workers: int | None = None,
 ) -> dict[str, Any]:
     client = client or YahooClient()
     now_epoch = int(time.time())
     warnings: list[str] = []
     windows = config.get("sma_windows", [5, 10, 20, 30, 50, 100])
+    settings = config["options"]
+    leader_days, sector_days = config.get("leader_return_days", 5), config.get("sector_return_days", 20)
+    history_workers = workers or settings.get("quote_workers", 8)
+    option_workers = workers or settings.get("option_workers", 6)
     tickers = _collect_tickers(config)
     macro_symbols = list(config.get("macro", {}))
     rate_symbol = config.get("risk_free_symbol")
@@ -468,7 +482,7 @@ def run_scan(
         except Exception as exc:
             return symbol, None, f"{symbol}: {type(exc).__name__}: {exc}"
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
+    with ThreadPoolExecutor(max_workers=history_workers) as pool:
         fetched = list(pool.map(fetch, all_symbols))
     frames: dict[str, pd.DataFrame] = {}
     for symbol, frame, error in fetched:
@@ -477,7 +491,7 @@ def run_scan(
         elif frame is not None:
             frames[symbol] = frame
 
-    snapshots = {symbol: trend_snapshot(frames[symbol], windows) for symbol in tickers if symbol in frames}
+    snapshots = {symbol: trend_snapshot(frames[symbol], windows, (leader_days, sector_days)) for symbol in tickers if symbol in frames}
     macro = {symbol: {**config["macro"][symbol], **macro_snapshot(frames[symbol], config["macro"][symbol]["unit"])} for symbol in macro_symbols if symbol in frames}
     rate = DEFAULT_RATE
     if rate_symbol in frames:
@@ -486,8 +500,7 @@ def run_scan(
 
     indices = {symbol: {"name": name, **snapshots[symbol]} for symbol, name in config["indices"].items() if symbol in snapshots}
     mag7 = {symbol: snapshots[symbol] for symbol in config["magnificent_seven"] if symbol in snapshots}
-    settings = config["options"]
-    sectors = rank_sectors(config["sectors"], snapshots, settings.get("leaders_per_sector", 1))
+    sectors = rank_sectors(config["sectors"], snapshots, settings.get("leaders_per_sector", 1), sector_days=sector_days, leader_days=leader_days)
 
     quote_symbols = list(dict.fromkeys([t for t in tickers if not t.startswith("^")] + config["large_cap_earnings"].get("extra_tickers", [])))
     quotes: dict[str, dict] = {}
@@ -506,7 +519,9 @@ def run_scan(
     holdings = {holding["ticker"]: float(holding.get("shares", 0)) for holding in config.get("holdings", [])}
     if not skip_options:
         min_cap = settings.get("watchlist_min_market_cap", 2e10)
-        watch = [t for sector in config["sectors"].values() for t in sector["members"] if (quotes.get(t, {}).get("marketCap") or 0) > min_cap]
+        watch = []
+        if settings.get("include_sector_symbols", True):
+            watch = [t for sector in config["sectors"].values() for t in sector["members"] if (quotes.get(t, {}).get("marketCap") or 0) > min_cap]
         option_tickers = list(dict.fromkeys(settings.get("focus", []) + watch + list(holdings)))
         history_path = cache_dir / "options-volume-history.json"
         history = _load_volume_history(history_path)
@@ -518,7 +533,7 @@ def run_scan(
             except Exception as exc:
                 return symbol, None, f"options {symbol}: {type(exc).__name__}: {exc}"
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        with ThreadPoolExecutor(max_workers=option_workers) as pool:
             scanned = list(pool.map(scan_one, option_tickers))
         per_ticker = {}
         for symbol, result, error in scanned:
@@ -551,19 +566,20 @@ def run_scan(
                 {
                     "sector": sector["name"],
                     "sector_rank": sector.get("rank"),
-                    "ret_5d": snapshots[ticker]["ret_5d"],
-                    "ret_20d": snapshots[ticker]["ret_20d"],
+                    "ret_leader": snapshots[ticker].get(f"ret_{leader_days}d"),
+                    "ret_sector": snapshots[ticker].get(f"ret_{sector_days}d"),
                     "stock_plan": stock_plan(snapshots[ticker], per_ticker.get(ticker, {}).get("gex")),
                 }
             )
             return book
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        with ThreadPoolExecutor(max_workers=option_workers) as pool:
             playbooks = [book for book in pool.map(play, leader_rows) if book]
 
     return {
         "scan": {"id": SCAN_ID, "version": SCAN_VERSION, "generated_at_utc": datetime.fromtimestamp(now_epoch, ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")},
         "as_of": as_of.strftime("%Y-%m-%d"),
+        "lookbacks": {"leader_return_days": leader_days, "sector_return_days": sector_days, "megacap_label": config.get("megacap_label", "七巨头")},
         "data_end": data_end,
         "regime": market_regime(indices, macro),
         "indices": indices,

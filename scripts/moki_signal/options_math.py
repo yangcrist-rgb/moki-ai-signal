@@ -170,6 +170,7 @@ def pick_by_delta(
     min_open_interest: int,
     max_spread_pct: float,
     max_delta_gap: float = 0.1,
+    delta_range: tuple[float, float] | None = None,
 ) -> tuple[Contract, float] | None:
     best: tuple[float, Contract, float] | None = None
     for contract in contracts:
@@ -181,6 +182,8 @@ def pick_by_delta(
         delta = bs_delta(contract.kind, spot, contract.strike, contract.dte / 365, rate, contract.iv)
         distance = abs(abs(delta) - target_abs_delta)
         if distance > max_delta_gap:
+            continue
+        if delta_range is not None and not delta_range[0] <= abs(delta) <= delta_range[1]:
             continue
         if best is None or distance < best[0]:
             best = (distance, contract, delta)

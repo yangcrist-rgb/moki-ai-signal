@@ -1,73 +1,202 @@
 {
-  "version": 1,
-  "indices": {
-    "SPY": "S&P 500",
-    "QQQ": "Nasdaq-100",
-    "DIA": "Dow Jones",
-    "IWM": "Russell 2000",
-    "^SOX": "PHLX Semiconductor",
-    "IGV": "Software ETF"
+  "name": "us-market-indicator",
+  "lookbacks": {
+    "sma_windows": [5, 10, 20, 30, 50, 100],
+    "leader_return_days": 5,
+    "sector_return_days": 20,
+    "leaders_per_sector": 2
   },
-  "magnificent_seven": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA"],
-  "macro": {
-    "CL=F": {"name": "WTI crude", "unit": "usd"},
-    "^TNX": {"name": "US 10Y yield", "unit": "yield"},
-    "^TYX": {"name": "US 30Y yield", "unit": "yield"}
-  },
-  "risk_free_symbol": "^IRX",
-  "sma_windows": [5, 10, 20, 30, 50, 100],
-  "sectors": {
-    "storage": {"name": "存储", "etf": null, "members": ["MU", "WDC", "STX", "SNDK", "NTAP"]},
-    "optical": {"name": "光通信", "etf": null, "members": ["COHR", "LITE", "CIEN", "FN", "AAOI", "CRDO"]},
-    "semi_equipment": {"name": "半导体设备", "etf": null, "members": ["AMAT", "LRCX", "KLAC", "ASML", "TER", "ONTO"]},
-    "software": {"name": "软件", "etf": "IGV", "members": ["MSFT", "ORCL", "CRM", "NOW", "ADBE", "PLTR", "INTU"]},
-    "cyber": {"name": "网络安全", "etf": "CIBR", "members": ["CRWD", "PANW", "FTNT", "ZS", "NET", "OKTA"]},
-    "energy": {"name": "能源", "etf": "XLE", "members": ["XOM", "CVX", "COP", "EOG", "SLB", "OXY"]},
-    "chips": {"name": "芯片", "etf": "SMH", "members": ["NVDA", "AMD", "AVGO", "TSM", "MRVL", "QCOM", "ARM"]},
-    "servers": {"name": "服务器", "etf": null, "members": ["SMCI", "DELL", "HPE", "CLS", "JBL"]},
-    "power_semis": {"name": "功率半导体", "etf": null, "members": ["ON", "MPWR", "NXPI", "ADI", "TXN", "AOSL"]},
-    "datacenter": {"name": "数据中心", "etf": null, "members": ["VRT", "ETN", "GEV", "EQIX", "DLR", "VST", "CEG"]},
-    "gold_mining": {"name": "金矿", "etf": "GDX", "members": ["NEM", "AEM", "B", "KGC", "WPM", "FNV"]},
-    "space": {"name": "太空", "etf": "UFO", "members": ["RKLB", "ASTS", "LUNR", "PL", "RDW"]},
-    "drones": {"name": "无人机", "etf": null, "members": ["AVAV", "KTOS", "ONDS", "RCAT", "UMAC"]}
-  },
-  "options": {
-    "focus": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "AMD", "TSM", "MU", "PLTR"],
-    "watchlist_min_market_cap": 20000000000,
-    "near_term_max_dte": 30,
-    "near_term_max_expirations": 3,
-    "anomaly_multiple": 2.0,
-    "anomaly_min_baseline_days": 3,
-    "playbook_top_sectors": 5,
-    "leaders_per_sector": 2,
-    "aggressive": {"min_dte": 21, "max_dte": 45, "target_dte": 30, "target_abs_delta": 0.5},
-    "conservative": {"min_dte": 21, "max_dte": 45, "target_dte": 35, "csp_abs_delta": 0.3, "otm_put_abs_delta": 0.25, "covered_call_abs_delta": 0.25},
-    "roll_deltas": [0.30, 0.35, 0.40, 0.50],
-    "min_open_interest": 100,
-    "max_spread_pct": 0.25
-  },
-  "holdings": [],
-  "large_cap_earnings": {
-    "min_market_cap": 300000000000,
-    "impact_map": {
-      "NVDA": {"theme": "AI 算力资本开支", "linked": ["AMD", "AVGO", "TSM", "MU", "SMCI", "DELL", "VRT", "COHR"]},
-      "MSFT": {"theme": "云与企业软件 / AI capex", "linked": ["IGV", "ORCL", "NOW", "NVDA", "VRT", "CEG"]},
-      "GOOGL": {"theme": "搜索广告 / 云 / TPU capex", "linked": ["META", "AVGO", "TSM", "COHR", "VRT"]},
-      "META": {"theme": "数字广告 / AI capex", "linked": ["GOOGL", "NVDA", "AVGO", "ANET", "VRT"]},
-      "AMZN": {"theme": "电商消费 / AWS / capex", "linked": ["MSFT", "GOOGL", "NVDA", "MRVL", "VRT"]},
-      "AAPL": {"theme": "消费电子供应链", "linked": ["QCOM", "AVGO", "TSM", "SWKS", "MU"]},
-      "TSLA": {"theme": "电动车 / 自动驾驶", "linked": ["ON", "NXPI", "RIVN"]},
-      "AVGO": {"theme": "定制 ASIC / 网络", "linked": ["MRVL", "NVDA", "COHR", "LITE", "CRDO"]},
-      "TSM": {"theme": "先进制程与半导体周期", "linked": ["NVDA", "AMD", "AVGO", "ASML", "AMAT", "LRCX", "KLAC"]},
-      "ORCL": {"theme": "AI 云基础设施", "linked": ["NVDA", "VRT", "CEG", "IGV"]},
-      "LLY": {"theme": "医药 / GLP-1", "linked": ["NVO", "XLV"]},
-      "JPM": {"theme": "银行 / 信用周期", "linked": ["XLF", "BAC", "GS"]},
-      "XOM": {"theme": "原油与能源资本开支", "linked": ["XLE", "CVX", "SLB", "COP"]},
-      "ASML": {"theme": "半导体设备订单", "linked": ["AMAT", "LRCX", "KLAC", "TSM"]}
+  "indices": [
+    {
+      "id": "sp500",
+      "label": "标普500",
+      "symbol": "SPY"
     },
-    "extra_tickers": ["LLY", "JPM", "V", "MA", "WMT", "COST", "NFLX", "UNH", "JNJ", "BRK-B", "ORCL"]
+    {
+      "id": "nasdaq100",
+      "label": "纳斯达克100",
+      "symbol": "QQQ"
+    },
+    {
+      "id": "dow",
+      "label": "道琼斯",
+      "symbol": "DIA"
+    },
+    {
+      "id": "russell2000",
+      "label": "罗素2000",
+      "symbol": "IWM"
+    }
+  ],
+  "market_lenses": [
+    {
+      "id": "sox",
+      "label": "费城半导体",
+      "symbol": "^SOX"
+    },
+    {
+      "id": "software",
+      "label": "软件ETF",
+      "symbol": "IGV"
+    }
+  ],
+  "megacap": {
+    "label": "美股七巨头",
+    "symbols": ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA"]
   },
+  "macro": [
+    {
+      "id": "oil",
+      "label": "WTI原油",
+      "symbol": "CL=F",
+      "change_mode": "percent"
+    },
+    {
+      "id": "us10y",
+      "label": "美国10年期收益率",
+      "symbol": "^TNX",
+      "change_mode": "basis-points"
+    },
+    {
+      "id": "us30y",
+      "label": "美国30年期收益率",
+      "symbol": "^TYX",
+      "change_mode": "basis-points"
+    }
+  ],
   "events": {
+    "lookahead_days": 30,
     "manual": []
-  }
+  },
+  "large_cap_earnings": {
+    "minimum_market_cap_usd": 300000000000,
+    "impact_map": {
+      "META": {"theme": "AI资本开支买方：capex指引决定GPU/网络/服务器需求", "related": ["NVDA", "AVGO", "ANET", "DELL", "MU"]},
+      "MSFT": {"theme": "AI资本开支买方+Azure增速；影响软件与AI基建", "related": ["NVDA", "AVGO", "ORCL", "IGV", "DELL"]},
+      "GOOGL": {"theme": "AI资本开支买方+云增速；TPU链", "related": ["AVGO", "NVDA", "ANET", "MU"]},
+      "AMZN": {"theme": "AI资本开支买方+AWS增速；Trainium链", "related": ["NVDA", "MRVL", "AVGO", "DELL"]},
+      "AAPL": {"theme": "消费电子需求与供应链", "related": ["QCOM", "AVGO", "TSM", "SWKS"]},
+      "NVDA": {"theme": "AI GPU龙头：决定整个AI硬件链情绪", "related": ["AVGO", "TSM", "SMCI", "DELL", "MU", "SOXX"]},
+      "TSLA": {"theme": "电动车/Robotaxi/机器人；与SPCX合并讨论", "related": ["SPCX", "RIVN", "NVDA"]},
+      "AVGO": {"theme": "定制AI芯片与网络", "related": ["MRVL", "ANET", "NVDA", "SOXX"]},
+      "TSM": {"theme": "晶圆代工与先进封装：AI芯片产能", "related": ["NVDA", "AVGO", "ASML", "LRCX", "SOXX"]},
+      "ASML": {"theme": "光刻设备订单：半导体资本开支周期", "related": ["LRCX", "AMAT", "KLAC", "SOXX"]},
+      "LRCX": {"theme": "刻蚀/沉积设备：WFE与存储资本开支周期", "related": ["AMAT", "KLAC", "ASML", "MU", "SOXX"]},
+      "AMAT": {"theme": "半导体设备：WFE周期", "related": ["LRCX", "KLAC", "ASML", "SOXX"]},
+      "MU": {"theme": "存储价格与HBM；存储资本开支", "related": ["SNDK", "WDC", "LRCX", "SOXX"]},
+      "AMD": {"theme": "AI GPU与CPU份额", "related": ["NVDA", "TSM", "SMCI", "SOXX"]},
+      "ORCL": {"theme": "AI云与举债扩张：neocloud信用情绪", "related": ["NBIS", "CRWV", "NVDA", "DELL"]},
+      "SPCX": {"theme": "xAI算力资本开支：服务器与算力租赁", "related": ["DELL", "SMCI", "NVDA", "NBIS"]},
+      "NFLX": {"theme": "流媒体与消费", "related": ["DIS", "SPOT"]},
+      "JPM": {"theme": "银行业净息差与信用质量", "related": ["BAC", "WFC", "GS", "XLF"]},
+      "BAC": {"theme": "银行业净息差与信用质量", "related": ["JPM", "WFC", "XLF"]},
+      "GS": {"theme": "投行与交易收入：市场活跃度", "related": ["MS", "JPM", "XLF"]},
+      "MS": {"theme": "投行与财富管理", "related": ["GS", "SCHW", "XLF"]},
+      "V": {"theme": "消费支出", "related": ["MA", "AXP"]},
+      "MA": {"theme": "消费支出", "related": ["V", "AXP"]},
+      "WMT": {"theme": "美国消费与零售", "related": ["COST", "TGT", "XRT"]},
+      "COST": {"theme": "美国消费与零售", "related": ["WMT", "TGT", "XRT"]},
+      "LLY": {"theme": "GLP-1减肥药与医药板块", "related": ["NVO", "XLV"]},
+      "UNH": {"theme": "医保成本与医疗板块", "related": ["CVS", "ELV", "XLV"]},
+      "XOM": {"theme": "油价与能源板块", "related": ["CVX", "XLE"]},
+      "PLTR": {"theme": "AI软件需求", "related": ["IGV", "SNOW", "NOW"]},
+      "IBM": {"theme": "企业IT与AI软件支出", "related": ["ACN", "IGV"]},
+      "INTC": {"theme": "PC/服务器CPU与代工", "related": ["AMD", "SOXX"]},
+      "NOW": {"theme": "企业软件支出", "related": ["CRM", "IGV"]},
+      "CRM": {"theme": "企业软件支出", "related": ["NOW", "IGV"]},
+      "PM": {"theme": "必需消费/烟草，防御板块", "related": ["MO", "XLP"]}
+    }
+  },
+  "options_monitor": {
+    "symbols": ["MU", "LRCX", "AMAT", "KLAC", "DELL", "PLTR", "AVGO", "INTC", "MDB", "DRAM", "SMCI", "HPE"],
+    "include_sector_symbols": true,
+    "minimum_market_cap_usd": 20000000000,
+    "chain_max_dte": 60,
+    "market_cap_workers": 12,
+    "option_workers": 6,
+    "near_term_days": 30,
+    "volume_spike_multiple": 2.0,
+    "minimum_baseline_days": 3,
+    "history_days": 20
+  },
+  "sectors": [
+    {
+      "id": "storage",
+      "label": "存储",
+      "etf": null,
+      "symbols": ["MU", "SNDK", "WDC", "STX", "NTAP"]
+    },
+    {
+      "id": "optical",
+      "label": "光通信",
+      "etf": null,
+      "symbols": ["COHR", "LITE", "CIEN", "FN", "AAOI", "CRDO"]
+    },
+    {
+      "id": "semi-equipment",
+      "label": "半导体设备",
+      "etf": null,
+      "symbols": ["AMAT", "LRCX", "KLAC", "ASML", "TER", "AMKR"]
+    },
+    {
+      "id": "software",
+      "label": "软件",
+      "etf": "IGV",
+      "symbols": ["MSFT", "ORCL", "NOW", "CRM", "ADBE", "INTU", "PLTR"]
+    },
+    {
+      "id": "cybersecurity",
+      "label": "网络安全",
+      "etf": "CIBR",
+      "symbols": ["CRWD", "PANW", "ZS", "FTNT", "NET", "OKTA"]
+    },
+    {
+      "id": "energy",
+      "label": "能源",
+      "etf": "XLE",
+      "symbols": ["XOM", "CVX", "COP", "EOG", "SLB", "FSLR"]
+    },
+    {
+      "id": "chips",
+      "label": "芯片",
+      "etf": "SMH",
+      "symbols": ["NVDA", "AVGO", "AMD", "TSM", "INTC", "QCOM", "TXN", "MRVL", "ARM"]
+    },
+    {
+      "id": "servers",
+      "label": "服务器",
+      "etf": null,
+      "symbols": ["DELL", "HPE", "SMCI", "IBM", "NTNX"]
+    },
+    {
+      "id": "power-semi",
+      "label": "功率半导体",
+      "etf": null,
+      "symbols": ["ON", "NXPI", "STM", "MPWR", "POWI", "TXN"]
+    },
+    {
+      "id": "datacenter",
+      "label": "算力中心",
+      "etf": null,
+      "symbols": ["VRT", "GEV", "ETN", "PWR", "CEG", "VST", "EQIX", "DLR"]
+    },
+    {
+      "id": "gold-mining",
+      "label": "黄金矿业",
+      "etf": "GDX",
+      "symbols": ["NEM", "GOLD", "AEM", "WPM", "KGC", "FNV"]
+    },
+    {
+      "id": "space",
+      "label": "航天",
+      "etf": "ITA",
+      "symbols": ["RKLB", "ASTS", "LUNR", "BA", "LMT", "NOC", "RTX"]
+    },
+    {
+      "id": "drones",
+      "label": "无人机",
+      "etf": null,
+      "symbols": ["AVAV", "KTOS", "RCAT", "ONDS", "JOBY", "ACHR", "EH"]
+    }
+  ]
 }

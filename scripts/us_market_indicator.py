@@ -9,6 +9,7 @@ import pandas as pd
 from moki_signal.data import default_as_of
 from moki_signal.market_scan import run_scan
 from moki_signal.scan_report import render_markdown
+from moki_signal.universe import load_universe
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,15 +18,16 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     parser = argparse.ArgumentParser(description="US market indicator scan: indices, macro, events, sectors, options playbooks")
     parser.add_argument("--universe", type=Path, default=ROOT / "configs" / "us_market_universe.json")
+    parser.add_argument("--profile", type=Path, help="Options agent profile; symbols with shares >= 100 get covered-call legs")
     parser.add_argument("--output-dir", type=Path, default=Path.cwd() / "outputs" / "market-indicator")
     parser.add_argument("--cache-dir", type=Path, default=Path.cwd() / ".moki-cache")
     parser.add_argument("--as-of", help="Latest daily bar included, YYYY-MM-DD; option chains are always a live snapshot")
     parser.add_argument("--skip-options", action="store_true", help="Index/sector tape only; no option chains")
     parser.add_argument("--skip-events", action="store_true", help="Skip earnings and manual events")
-    parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--workers", type=int, help="Override market_cap_workers / option_workers from the universe file")
     args = parser.parse_args()
 
-    config = json.loads(args.universe.read_text(encoding="utf-8"))
+    config = load_universe(args.universe, args.profile)
     as_of = pd.Timestamp(args.as_of) if args.as_of else default_as_of()
     result = run_scan(config, as_of=as_of, cache_dir=args.cache_dir, skip_options=args.skip_options, skip_events=args.skip_events, workers=args.workers)
     target = args.output_dir / (result["data_end"] or as_of.strftime("%Y-%m-%d"))

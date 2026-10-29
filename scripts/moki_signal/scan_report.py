@@ -38,7 +38,9 @@ def _trend_rows(items: dict[str, dict], windows: list[str], with_name: bool) -> 
 
 
 def render_markdown(result: dict[str, Any]) -> str:
-    windows = ["5", "10", "20", "30", "50", "100"]
+    windows = [key for key in next(iter(result["indices"].values()), {}).get("sma", {})] or ["5", "10", "20", "30", "50", "100"]
+    look = result.get("lookbacks", {})
+    leader_days, sector_days = look.get("leader_return_days", 5), look.get("sector_return_days", 20)
     regime = result["regime"]
     out = [
         f"# 美股指标扫描 {result['data_end']}",
@@ -46,7 +48,7 @@ def render_markdown(result: dict[str, Any]) -> str:
         f"市场状态：**{regime['label']}**（四大指数多头 {regime['bullish_indices']} / 空头 {regime['bearish_indices']}）"
         + (f"；逆风：{'，'.join(regime['headwinds'])}" if regime["headwinds"] else ""),
         "",
-        "## 1. 大盘与七巨头",
+        f"## 1. 大盘与{look.get('megacap_label', '七巨头')}",
         "",
     ]
     out += _table(["代码", "名称", "收盘", "1日", "5日", "20日", "均线位置", "趋势"], _trend_rows(result["indices"], windows, True))
@@ -82,7 +84,7 @@ def render_markdown(result: dict[str, Any]) -> str:
             out += ["", "EPS 为 Yahoo 远期与 TTM 值，不是本季实际值；`reported-verify-actuals` 表示时间已过，需核实实际 EPS。"]
         else:
             out += ["本时段无符合条件的大市值财报。"]
-        out += ["", "## 4. 未来 30 日事件", ""]
+        out += ["", f"## 4. 未来 {events.get('lookahead_days', 30)} 日事件", ""]
         if events["next_30d"]:
             rows = [[row["date"], row.get("ticker") or "-", row.get("type", ""), row.get("session") or "-", _num(row.get("market_cap_b"), 0, "B")] for row in events["next_30d"]]
             out += _table(["日期", "代码", "类型", "时段", "市值"], rows)
@@ -90,13 +92,13 @@ def render_markdown(result: dict[str, Any]) -> str:
             out += ["无。"]
         out += ["", "投资者日需在 `events.manual` 中手动维护。"]
 
-    out += ["", "## 5. 板块强弱（20 日排名）", ""]
+    out += ["", f"## 5. 板块强弱（{sector_days} 日排名）", ""]
     rows = []
     for sector in result["sectors"]:
         top = sector["members"][:2]
-        leaders = "，".join(f"{item['ticker']} {_signed(item['ret_5d'])}" for item in top)
+        leaders = "，".join(f"{item['ticker']} {_signed(item['ret_leader'])}" for item in top)
         rows.append([str(sector["rank"]), sector["name"], _signed(sector["score_20d"]), sector["score_basis"], f"{sector['breadth_above_sma20']}% / {sector['breadth_above_sma50']}%", leaders])
-    out += _table(["排名", "板块", "20日", "口径", "广度 >SMA20/50", "5日领先"], rows)
+    out += _table(["排名", "板块", f"{sector_days}日", "口径", "广度 >SMA20/50", f"{leader_days}日领先"], rows)
 
     options = result["options"]
     if options.get("status") != "skipped":
@@ -136,8 +138,8 @@ def render_markdown(result: dict[str, Any]) -> str:
             else:
                 rng = plan.get("range") or [None, None]
                 levels = f"区间 {_num(rng[0])}–{_num(rng[1])}，中轴 SMA50 {_num(plan.get('pivot'))}"
-            rows.append([f"#{book['sector_rank']} {book['sector']}" if book.get("sector_rank") else book["sector"], book["ticker"], _num(book.get("spot")), _signed(book["ret_5d"]), TREND_LABEL.get(book["trend"], book["trend"]), plan["action"], levels])
-        out += _table(["板块", "代码", "现价", "5日", "趋势", "正股动作", "关键价位"], rows)
+            rows.append([f"#{book['sector_rank']} {book['sector']}" if book.get("sector_rank") else book["sector"], book["ticker"], _num(book.get("spot")), _signed(book["ret_leader"]), TREND_LABEL.get(book["trend"], book["trend"]), plan["action"], levels])
+        out += _table(["板块", "代码", "现价", f"{leader_days}日", "趋势", "正股动作", "关键价位"], rows)
         out += [""]
         rows = []
         for book in result["playbooks"]:
