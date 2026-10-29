@@ -497,7 +497,8 @@
       "MDB",
       "DRAM",
       "SMCI",
-      "HPE"
+      "HPE",
+      "BE"
     ],
     "include_sector_symbols": true,
     "minimum_market_cap_usd": 20000000000,
@@ -594,7 +595,8 @@
         "CEG",
         "VST",
         "EQIX",
-        "DLR"
+        "DLR",
+        "BE"
       ]
     },
     {
