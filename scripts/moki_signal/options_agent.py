@@ -13,6 +13,7 @@ from .market_scan import EASTERN, ChainCache
 from .options_math import (
     Contract,
     bs_delta,
+    implied_vol,
     bs_price,
     bs_theta_per_day,
     expirations_in_window,
@@ -146,19 +147,24 @@ def evaluate_option_position(
             "open_interest": contract.open_interest,
         }
     )
-    if usable_iv(contract):
-        delta = bs_delta(kind, spot, strike, years, rate, contract.iv)
-        theta = bs_theta_per_day(kind, spot, strike, years, rate, contract.iv)
+    # Without a live bid/ask (outside the regular session) Yahoo's IV field is a placeholder.
+    iv, iv_source = (contract.iv, "yahoo") if usable_iv(contract) and contract.bid > 0 and contract.ask > 0 else (None, None)
+    if iv is None and mid > 0:
+        iv, iv_source = implied_vol(kind, mid, spot, strike, years, rate), "implied-from-last"
+    if iv is not None:
+        delta = bs_delta(kind, spot, strike, years, rate, iv)
+        theta = bs_theta_per_day(kind, spot, strike, years, rate, iv)
         row.update(
             {
-                "iv_pct": round(contract.iv * 100, 1),
+                "iv_pct": round(iv * 100, 1),
+                "iv_source": iv_source,
                 "delta": round(delta, 3),
                 "theta_per_day_usd": round(theta * 100 * contracts, 2),
                 "delta_dollars": round(delta * 100 * contracts * spot, 2),
             }
         )
         if ext:
-            shift = bs_price(kind, ext["price"], strike, years, rate, contract.iv) - bs_price(kind, spot, strike, years, rate, contract.iv)
+            shift = bs_price(kind, ext["price"], strike, years, rate, iv) - bs_price(kind, spot, strike, years, rate, iv)
             estimate = max(0.0, mid + shift)
             row["extended_estimate"] = {
                 "spot": ext["price"],
@@ -476,11 +482,20 @@ def _portfolio_section(result: dict[str, Any]) -> list[str]:
             "| 代码 | 持仓 | 成本 | 收盘价 | 盘前/盘后 | 期权中间价 | 市值 | 盈亏（收盘） | 盈亏（按盘前/盘后估） | Delta | 每日 Theta | 剩余天数 | 管理提示 |",
             "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ] + rows
-        out += ["", "期权中间价取最近买卖报价；盘前/盘后估值按相同 IV 用 Black-Scholes 平移正股价得到，不含 IV 变化（财报后 IV 通常回落）。"]
+        out += ["", "期权中间价取最近买卖报价（非交易时段无报价时取最新成交价，IV 由成交价反推）；盘前/盘后估值按相同 IV 用 Black-Scholes 平移正股价得到，不含 IV 变化（财报后 IV 通常回落）。"]
     return out + [""]
 
 
-def render_agent_markdown(result: dict[str, Any]) -> str:
+def render_agent_markdown(result: dict[str, Any], *, embedded: bool = False) -> str:
+    """Full report; ``embedded`` drops the title and demotes headings so it can sit inside the market scan."""
+    text = _render_agent(result)
+    if not embedded:
+        return text
+    lines = text.splitlines()[2:]
+    return "\n".join("#" + line if line.startswith("## ") else line for line in lines)
+
+
+def _render_agent(result: dict[str, Any]) -> str:
     risk = result["risk"]
     account = result.get("account_size_usd")
     out = [

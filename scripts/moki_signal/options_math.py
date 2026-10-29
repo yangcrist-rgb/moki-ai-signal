@@ -72,6 +72,21 @@ def bs_theta_per_day(kind: str, spot: float, strike: float, years: float, rate: 
     return annual / 365
 
 
+def implied_vol(kind: str, price: float, spot: float, strike: float, years: float, rate: float) -> float | None:
+    """Bisection inverse of ``bs_price``; None when the price is outside the no-arbitrage band."""
+    years = max(years, 1 / 365)
+    low, high = MIN_IV, MAX_IV
+    if not (bs_price(kind, spot, strike, years, rate, low) < price < bs_price(kind, spot, strike, years, rate, high)):
+        return None
+    for _ in range(80):
+        mid = (low + high) / 2
+        if bs_price(kind, spot, strike, years, rate, mid) < price:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2
+
+
 def spot_for_put_delta(strike: float, years: float, rate: float, iv: float, target_abs_delta: float) -> float:
     """Underlying price at which a put's Black-Scholes delta reaches -target_abs_delta."""
     years = max(years, 1 / 365)
